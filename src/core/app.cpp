@@ -11,6 +11,7 @@
 #include <SDL.h>
 #include <iostream>
 #include "game.hpp"
+#include "audio.hpp"
 #include "constants.hpp"
 #include "util/frame_cap.hpp"
 #include "util/sdl_check.hpp"
@@ -36,7 +37,7 @@ int getScaleFactor() {
 }
 
 Application::Application() {
-  SDL_CHECK(SDL_Init(SDL_INIT_VIDEO));
+  SDL_CHECK(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
 }
 
 Application::~Application() {
@@ -63,8 +64,9 @@ void Application::run() {
 
   SDL::Texture maze = SDL::loadTexture(renderer.get(), animera::getTextureInfo());
   SDL::QuadWriter writer{renderer.get(), maze.get()};
+  Audio audio;
   Game game;
-  game.init();
+  game.init(audio);
 
   int frame = 0;
   bool quit = false;
@@ -84,7 +86,7 @@ void Application::run() {
     // Game::logic is called once for each tile
     // Game::render is called for each pixel between tiles
     if (frame % tileSize == 0) {
-      if (!game.logic()) {
+      if (!game.logic(audio)) {
         quit = true;
       }
     }

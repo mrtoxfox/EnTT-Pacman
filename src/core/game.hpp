@@ -15,11 +15,13 @@
 #include "util/sdl_quad_writer.hpp"
 #include <entt/entity/registry.hpp>
 
+class Audio;
+
 class Game {
 public:
-  void init();
+  void init(Audio &);
   void input(SDL_Scancode);
-  bool logic();
+  bool logic(Audio &);
   void render(SDL::QuadWriter &, int);
 
 private:

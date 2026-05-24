@@ -55,7 +55,13 @@ constexpr int scatterTicks = 15;
 // The amount of time ghosts will be in chase mode before switching
 // to scatter mode
 constexpr int chaseTicks = 40;
-// The frame rate. The game speed in set as 8 times slower than the frame rate
-constexpr int fps = 20;
+// The frame rate. Game logic runs once every tileSize frames, so raising the
+// frame rate speeds up the whole game. Bumped from 20 to 30 for a faster pace.
+constexpr int fps = 30;
+
+// Settings passed to Mix_OpenAudio when the audio device is opened
+constexpr int audioFrequency = 44100;
+constexpr int audioOutputChannels = 2;
+constexpr int audioChunkSize = 2048;
 
 #endif

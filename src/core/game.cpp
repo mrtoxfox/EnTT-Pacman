@@ -8,8 +8,10 @@
 
 #include "game.hpp"
 
+#include "audio.hpp"
 #include "constants.hpp"
 #include "sys/house.hpp"
+#include "sys/audio.hpp"
 #include "sys/render.hpp"
 #include "sys/eat_dots.hpp"
 #include "sys/movement.hpp"
@@ -20,7 +22,7 @@
 #include "sys/change_ghost_mode.hpp"
 #include "sys/player_ghost_collide.hpp"
 
-void Game::init() {
+void Game::init(Audio &device) {
   maze = makeMazeState();
   const entt::entity player = makePlayer(reg);
   const entt::entity blinky = makeBlinky(reg, player);
@@ -29,6 +31,9 @@ void Game::init() {
   makeClyde(reg, player);
   // seeding a pseudo random number generator with a random source
   rand.seed(std::random_device{}());
+  // The intro jingle plays once; the audio system starts the looping
+  // background music after it finishes
+  device.playMusic(SoundId::intro, false);
 }
 
 void Game::input(const SDL_Scancode key) {
@@ -37,7 +42,7 @@ void Game::input(const SDL_Scancode key) {
   }
 }
 
-bool Game::logic() {
+bool Game::logic(Audio &device) {
   // The order of systems is very important in an ECS. Each system reads some
   // state and modifies some state. If the state isn't read and modified in the
   // right order, subtle bugs can occur. Make sure that the order of systems is
@@ -85,8 +90,8 @@ bool Game::logic() {
   setScaredTarget(reg, maze, rand);
   setScatterTarget(reg);
   setEatenTarget(reg);
-  leaveHouse(reg);
   pursueTarget(reg, maze);
+  leaveHouse(reg);
 
   const GhostCollision collision = playerGhostCollide(reg);
   if (collision.type == GhostCollision::Type::eat) {
@@ -97,6 +102,19 @@ bool Game::logic() {
   } else if (dots == dotsInMaze) {
     state = State::won;
   }
+
+  // Play the sounds queued by the systems above and update the music. The
+  // win and lose sounds are one-shots tied to the end of the game, so they
+  // are played here, after the audio system, rather than queued as events.
+  audio(reg, device);
+  if (state == State::lost) {
+    device.playSfx(SoundId::death);
+    device.playMusic(SoundId::loseMusic, true);
+  } else if (state == State::won) {
+    device.playSfx(SoundId::win);
+    device.playMusic(SoundId::winMusic, true);
+  }
+
   return true;
 }
 

@@ -12,7 +12,7 @@ configuration:
   - Release
 
 install:
-  - vcpkg install sdl2
+  - vcpkg install sdl2 sdl2-mixer
 
 before_build:
   - cd %BUILD_DIR%

@@ -10,6 +10,7 @@
 
 #include "comp/player.hpp"
 #include "comp/position.hpp"
+#include "comp/sound_event.hpp"
 #include <entt/entity/registry.hpp>
 
 namespace {
@@ -34,9 +35,17 @@ int countConsumptions(entt::registry &reg, MazeState &maze, const Tile food) {
 }
 
 int eatDots(entt::registry &reg, MazeState &maze) {
-  return countConsumptions(reg, maze, Tile::dot);
+  const int count = countConsumptions(reg, maze, Tile::dot);
+  if (count > 0) {
+    reg.emplace<SoundEvent>(reg.create(), SoundId::chomp);
+  }
+  return count;
 }
 
 bool eatEnergizer(entt::registry &reg, MazeState &maze) {
-  return countConsumptions(reg, maze, Tile::energizer);
+  const bool eaten = countConsumptions(reg, maze, Tile::energizer) > 0;
+  if (eaten) {
+    reg.emplace<SoundEvent>(reg.create(), SoundId::energizer);
+  }
+  return eaten;
 }

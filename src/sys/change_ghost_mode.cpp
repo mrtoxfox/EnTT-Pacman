@@ -11,12 +11,13 @@
 #include "comp/house.hpp"
 #include "comp/ghost.hpp"
 #include "comp/ghost_mode.hpp"
+#include "comp/sound_event.hpp"
 #include <entt/entity/registry.hpp>
 
 void ghostScared(entt::registry &reg) {
   const auto view = reg.view<Ghost>();
   for (const entt::entity e : view) {
-    reg.remove_if_exists<ChaseMode, ScatterMode, ScaredMode>(e);
+    reg.remove_if_exists<ChaseMode, ScatterMode>(e);
     // Ghosts in EatenMode don't get scared
     if (!reg.has<EatenMode>(e)) {
       reg.emplace<ScaredMode>(e);
@@ -42,6 +43,7 @@ void ghostEaten(entt::registry &reg, const entt::entity ghost) {
   reg.remove<ScaredMode>(ghost);
   reg.emplace<EatenMode>(ghost);
   reg.emplace<EnterHouse>(ghost);
+  reg.emplace<SoundEvent>(reg.create(), SoundId::eatGhost);
 }
 
 void ghostScatter(entt::registry &reg) {
