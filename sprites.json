@@ -1,0 +1,22 @@
+{
+  "output name": "sprites",
+  "output directory": "src/util",
+  "generator": "cpp deflated with inflate",
+  "animations": [
+    {
+      "file": "animations/dot.animera",
+      "name": ""
+    },
+    "animations/pacman.animera",
+    "animations/scared.animera",
+    {
+      "file": "animations/maze.animera",
+      "name": ""
+    },
+    {
+      "file": "animations/ghost.animera",
+      "name": "",
+      "composite": false
+    }
+  ]
+}
