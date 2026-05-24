@@ -29,8 +29,8 @@ int getScaleFactor() {
   #warning SDL 2.0.5 or later is recommended
   SDL_CHECK(SDL_GetDisplayBounds(0, &bounds));
   #endif
-  const int scaleX = bounds.w / tilesPx.x;
-  const int scaleY = bounds.h / tilesPx.y;
+  const int scaleX = bounds.w / canvasPx.x;
+  const int scaleY = bounds.h / canvasPx.y;
   return std::max(1, std::min(scaleX, scaleY));
 }
 
@@ -51,7 +51,7 @@ void Application::run() {
   SDL::Window window{SDL_CHECK(SDL_CreateWindow(
     "Pacman",
     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-    tilesPx.x * scaleFactor, tilesPx.y * scaleFactor,
+    canvasPx.x * scaleFactor, canvasPx.y * scaleFactor,
     SDL_WINDOW_SHOWN
   ))};
 
@@ -60,7 +60,7 @@ void Application::run() {
     -1,
     SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
   ))};
-  SDL_CHECK(SDL_RenderSetLogicalSize(renderer.get(), tilesPx.x, tilesPx.y));
+  SDL_CHECK(SDL_RenderSetLogicalSize(renderer.get(), canvasPx.x, canvasPx.y));
 
   SDL::Texture maze = SDL::loadTexture(renderer.get(), animera::getTextureInfo());
   SDL::QuadWriter writer{renderer.get(), maze.get()};
@@ -79,7 +79,10 @@ void Application::run() {
         quit = true;
         break;
       } else if (e.type == SDL_KEYDOWN) {
-        game.input(e.key.keysym.scancode);
+        if (!game.input(audio, e.key.keysym.scancode)) {
+          quit = true;
+          break;
+        }
       }
     }
 
@@ -93,7 +96,7 @@ void Application::run() {
 
     SDL_CHECK(SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, 255));
     SDL_CHECK(SDL_RenderClear(renderer.get()));
-    game.render(writer, frame % tileSize);
+    game.render(renderer.get(), writer, frame % tileSize);
     ++frame;
     SDL_RenderPresent(renderer.get());
   }

@@ -12,13 +12,20 @@
 #include "constants.hpp"
 #include "sys/house.hpp"
 #include "sys/audio.hpp"
+#include "comp/score.hpp"
+#include "comp/lives.hpp"
+#include "comp/player.hpp"
 #include "sys/render.hpp"
 #include "sys/eat_dots.hpp"
 #include "sys/movement.hpp"
 #include "core/factories.hpp"
 #include "sys/set_target.hpp"
+#include "comp/sound_event.hpp"
 #include "sys/player_input.hpp"
+#include "comp/immortal_mode.hpp"
 #include "sys/pursue_target.hpp"
+#include "sys/immortal_timeout.hpp"
+#include "sys/immortal_override.hpp"
 #include "sys/change_ghost_mode.hpp"
 #include "sys/player_ghost_collide.hpp"
 
@@ -36,10 +43,34 @@ void Game::init(Audio &device) {
   device.playMusic(SoundId::intro, false);
 }
 
-void Game::input(const SDL_Scancode key) {
+bool Game::input(Audio &device, const SDL_Scancode key) {
+  if (key == SDL_SCANCODE_ESCAPE) {
+    return false;
+  }
+  if (key == SDL_SCANCODE_SPACE) {
+    if (state == State::playing) {
+      state = State::paused;
+      device.pauseAll();
+    } else if (state == State::paused) {
+      state = State::playing;
+      device.resumeAll();
+    }
+    return true;
+  }
+  if (key == SDL_SCANCODE_P) {
+    if (state == State::playing) {
+      state = State::pausedDebug;
+      device.pauseAll();
+    } else if (state == State::pausedDebug) {
+      state = State::playing;
+      device.resumeAll();
+    }
+    return true;
+  }
   if (state == State::playing) {
     playerInput(reg, key);
   }
+  return true;
 }
 
 bool Game::logic(Audio &device) {
@@ -82,6 +113,7 @@ bool Game::logic(Audio &device) {
     ghostScared(reg);
   }
   ghostScaredTimeout(reg);
+  immortalTimeout(reg);
   enterHouse(reg);
   setBlinkyChaseTarget(reg);
   setPinkyChaseTarget(reg);
@@ -90,24 +122,45 @@ bool Game::logic(Audio &device) {
   setScaredTarget(reg, maze, rand);
   setScatterTarget(reg);
   setEatenTarget(reg);
-  pursueTarget(reg, maze);
   leaveHouse(reg);
+  immortalOverride(reg);
+  pursueTarget(reg, maze);
 
   const GhostCollision collision = playerGhostCollide(reg);
   if (collision.type == GhostCollision::Type::eat) {
     ghostEaten(reg, collision.ghost);
   }
   if (collision.type == GhostCollision::Type::lose) {
-    state = State::lost;
+    // Find the player that was caught. There's only one player entity, but
+    // iterate the view so we stay ECS-shaped.
+    const auto players = reg.view<Player, Lives, Score>();
+    for (const entt::entity p : players) {
+      Lives &lives = players.get<Lives>(p);
+      Score &score = players.get<Score>(p);
+      --lives.remaining;
+      score.value /= 2;
+      if (lives.remaining <= 0) {
+        state = State::lost;
+      } else {
+        reg.emplace<ImmortalMode>(p);
+        // Queue the death SFX as a regular sound event so it plays via the
+        // audio system on this same tick.
+        reg.emplace<SoundEvent>(reg.create(), SoundId::death);
+      }
+    }
   } else if (dots == dotsInMaze) {
     state = State::won;
   }
 
   // Play the sounds queued by the systems above and update the music. The
   // win and lose sounds are one-shots tied to the end of the game, so they
-  // are played here, after the audio system, rather than queued as events.
-  audio(reg, device);
-  if (state == State::lost) {
+  // are played here directly. Skip the audio system on a state transition so
+  // its music-management loop doesn't briefly restart background/siren before
+  // the end-screen track takes over (would surface as a flash of the wrong
+  // music on lose).
+  if (state == State::playing) {
+    audio(reg, device);
+  } else if (state == State::lost) {
     device.playSfx(SoundId::death);
     device.playMusic(SoundId::loseMusic, true);
   } else if (state == State::won) {
@@ -118,15 +171,30 @@ bool Game::logic(Audio &device) {
   return true;
 }
 
-void Game::render(SDL::QuadWriter &writer, const int frame) {
-  if (state == State::playing) {
+void Game::render(SDL_Renderer *renderer, SDL::QuadWriter &writer, const int frame) {
+  if (state == State::playing || state == State::paused || state == State::pausedDebug) {
+    // While playing, cache the sub-tile frame each render. On pause, reuse the
+    // last cached value so the freeze keeps the pixel position the player saw
+    // at press time. Snapping to 0 would jump the sprite back to the tile
+    // boundary - invisible under the dim overlay but obvious for pausedDebug.
+    if (state == State::playing) {
+      frozenFrame = frame;
+    }
+    const int renderFrame = (state == State::playing) ? frame : frozenFrame;
     fullRender(writer, animera::SpriteID::maze);
     dotRender(writer, maze);
-    playerRender(reg, writer, frame);
-    ghostRender(reg, writer, frame);
+    playerRender(reg, writer, renderFrame);
+    ghostRender(reg, writer, renderFrame);
+    if (state == State::paused) {
+      pauseOverlayRender(renderer);
+      pauseTextRender(renderer);
+    }
+    hudRender(renderer, writer, reg);
   } else if (state == State::won) {
     fullRender(writer, animera::SpriteID::win);
+    summaryRender(renderer, writer, reg);
   } else if (state == State::lost) {
     fullRender(writer, animera::SpriteID::lose);
+    summaryRender(renderer, writer, reg);
   }
 }

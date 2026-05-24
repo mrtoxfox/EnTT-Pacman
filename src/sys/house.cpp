@@ -22,6 +22,7 @@ void enterHouse(entt::registry &reg) {
     if (view.get<Position>(e).p == view.get<HomePosition>(e).home) {
       reg.remove<EnterHouse>(e);
       reg.emplace<LeaveHouse>(e);
+      reg.remove<EatenMode>(e);
       reg.emplace<ChaseMode>(e);
     }
   }

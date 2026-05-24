@@ -8,8 +8,10 @@
 
 #include "eat_dots.hpp"
 
+#include "comp/score.hpp"
 #include "comp/player.hpp"
 #include "comp/position.hpp"
+#include "core/constants.hpp"
 #include "comp/sound_event.hpp"
 #include <entt/entity/registry.hpp>
 
@@ -38,14 +40,22 @@ int eatDots(entt::registry &reg, MazeState &maze) {
   const int count = countConsumptions(reg, maze, Tile::dot);
   if (count > 0) {
     reg.emplace<SoundEvent>(reg.create(), SoundId::chomp);
+    const auto view = reg.view<Player, Score>();
+    for (const entt::entity e : view) {
+      view.get<Score>(e).value += count * dotPoints;
+    }
   }
   return count;
 }
 
 bool eatEnergizer(entt::registry &reg, MazeState &maze) {
-  const bool eaten = countConsumptions(reg, maze, Tile::energizer) > 0;
-  if (eaten) {
+  const int count = countConsumptions(reg, maze, Tile::energizer);
+  if (count > 0) {
     reg.emplace<SoundEvent>(reg.create(), SoundId::energizer);
+    const auto view = reg.view<Player, Score>();
+    for (const entt::entity e : view) {
+      view.get<Score>(e).value += count * energizerPoints;
+    }
   }
-  return eaten;
+  return count > 0;
 }

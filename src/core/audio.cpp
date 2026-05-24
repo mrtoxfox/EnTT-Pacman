@@ -60,14 +60,30 @@ Audio::Audio() {
   SDL_CHECK(Mix_OpenAudio(
     audioFrequency, MIX_DEFAULT_FORMAT, audioOutputChannels, audioChunkSize
   ));
-  const std::string base = basePath();
-  for (const SoundFile &file : soundFiles) {
-    const std::string full = base + file.path;
-    if (isMusic(file.id)) {
-      tracks[musicIndex(file.id)] = SDL_CHECK(Mix_LoadMUS(full.c_str()));
-    } else {
-      chunks[sfxIndex(file.id)] = SDL_CHECK(Mix_LoadWAV(full.c_str()));
+  // All bundled assets are .wav, which Mix_LoadWAV/Mix_LoadMUS decode without
+  // any optional decoder. The Mix_Init(0)/Mix_Quit() pair is still kept so
+  // adding an .ogg/.mp3 only needs the flag mask changed here.
+  Mix_Init(0);
+  try {
+    const std::string base = basePath();
+    for (const SoundFile &file : soundFiles) {
+      const std::string full = base + file.path;
+      if (isMusic(file.id)) {
+        tracks[musicIndex(file.id)] = SDL_CHECK(Mix_LoadMUS(full.c_str()));
+      } else {
+        chunks[sfxIndex(file.id)] = SDL_CHECK(Mix_LoadWAV(full.c_str()));
+      }
     }
+  } catch (...) {
+    for (Mix_Chunk *chunk : chunks) {
+      Mix_FreeChunk(chunk);
+    }
+    for (Mix_Music *track : tracks) {
+      Mix_FreeMusic(track);
+    }
+    Mix_Quit();
+    Mix_CloseAudio();
+    throw;
   }
 }
 
@@ -80,6 +96,7 @@ Audio::~Audio() {
   for (Mix_Music *track : tracks) {
     Mix_FreeMusic(track);
   }
+  Mix_Quit();
   Mix_CloseAudio();
 }
 
@@ -90,6 +107,16 @@ void Audio::playSfx(const SoundId id) {
 void Audio::playMusic(const SoundId id, const bool loop) {
   Mix_PlayMusic(tracks[musicIndex(id)], loop ? -1 : 1);
   current = id;
+}
+
+void Audio::pauseAll() {
+  Mix_PauseMusic();
+  Mix_Pause(-1);
+}
+
+void Audio::resumeAll() {
+  Mix_ResumeMusic();
+  Mix_Resume(-1);
 }
 
 SoundId Audio::currentMusic() const {

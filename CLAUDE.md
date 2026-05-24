@@ -24,7 +24,7 @@ cmake --build .
 - No test suite and no linter. CI (`.travis.yml`, `appveyor.yml`) only builds Release.
 - `CMakeLists.txt` builds the source list with `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` over `src/*.cpp` and `src/*.hpp`. New files are picked up automatically on the next build, no edit to `CMakeLists.txt` needed (the `.hpp` glob is just for IDE tooling).
 
-Controls: WASD or arrow keys.
+Controls: WASD or arrow keys to move. SPACE pauses (dim overlay + "PAUSED" text + audio paused). P is a debug pause that only freezes the frame (no overlay, no text). ESC quits. `Game::input` returns `false` to signal quit; `Application::run` watches the return value.
 
 ## Architecture
 
@@ -44,6 +44,10 @@ The loop in `Application::run()` runs at `fps` (30, in `constants.hpp`) and spli
 `fps` is the game-speed lever: logic and render rates scale with it together, so raising it speeds up the whole game while keeping motion smooth. It was raised from 20 to 30. Don't repurpose `tileSize` for speed; it is also the tile pixel size and the render interpolation divisor.
 
 So an entity's `Position` is always integer tile coordinates. The smooth motion is purely a render-time effect. Understanding this means reading `app.cpp`, `game.cpp`, and `constants.hpp` together.
+
+### Game states
+
+`Game::State` is `playing | paused | pausedDebug | won | lost`. `Game::logic` early-returns on anything but `playing`, so all four non-playing states freeze the world. The two pause variants differ only in render: `paused` draws the dim overlay and "PAUSED" text (`pauseOverlayRender` + `pauseTextRender` in `sys/render.cpp`); `pausedDebug` skips both, leaving the unmodified frame so you can inspect a single tick. Both pause audio via `Audio::pauseAll`. `Game::input` returns `bool` (`false` on ESC) so `Application::run` can quit the main loop.
 
 ### Systems
 
@@ -79,7 +83,7 @@ Sound follows the ECS pattern. `Audio` (`core/audio.hpp`) is an RAII wrapper tha
 
 - `SoundEvent` (`comp/sound_event.hpp`) is a transient component carrying a `SoundId`. A system that detects an event creates a throwaway entity with it (`reg.emplace<SoundEvent>(reg.create(), SoundId::chomp)`), the way the `EnterHouse`/`LeaveHouse` ticket tags work. `eatDots`, `eatEnergizer`, and `ghostEaten` emit these.
 - `sys/audio.cpp` is the consuming system, the last call in `Game::logic()`. It plays every queued `SoundEvent`, destroys the event entities, and swaps the looping music (background vs frightened siren) based on whether any ghost has `ScaredMode`.
-- Music is one global track, so it doesn't map cleanly to per-entity events. The intro jingle is started directly by `Game::init`; the win/lose music and one-shot win/death SFX are played directly by `Game::logic` after the audio system runs, since they are tied to the end of the game.
+- Music is one global track, so it doesn't map cleanly to per-entity events. The intro jingle is started directly by `Game::init`; the win/lose music and one-shot win/death SFX are played directly by `Game::logic`, mutually exclusive with the audio system. On the tick state transitions to `won` or `lost`, `Game::logic` skips calling `audio()` and plays the end-screen SFX/music directly. Without that skip the audio system's music-management loop briefly restarts background/siren (since neither matches `wanted`), producing a flash of the wrong track before the end music takes over.
 - `SoundId` (`core/sound_id.hpp`) lists the five SFX ids first, then the five music ids. Assets live in `audio/sfx/` and `audio/music/`, loaded as `Mix_Chunk` and `Mix_Music` respectively.
 - The game has no fruit, extra-life or intermission feature, so four bundled sounds are repurposed (energizer, win jingle, win music, lose music). This mapping is documented in `sound_id.hpp`.
 

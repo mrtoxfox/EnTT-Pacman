@@ -14,6 +14,7 @@
 #include "comp/position.hpp"
 #include "util/dir_to_pos.hpp"
 #include "comp/ghost_mode.hpp"
+#include "comp/immortal_mode.hpp"
 #include <entt/entity/registry.hpp>
 
 namespace {
@@ -26,7 +27,7 @@ bool collide(
 ) {
   if (pPos == gPos)               return true;
   if (pPos + toPos(pDir) != gPos) return false;
-  if (pDir != gDir)               return false;
+  if (pDir != opposite(gDir))     return false;
   return true;
 }
 
@@ -45,6 +46,10 @@ GhostCollision playerGhostCollide(entt::registry &reg) {
         if (reg.has<ScaredMode>(g)) {
           return {g, GhostCollision::Type::eat};
         } else if (reg.has<EatenMode>(g)) {
+          continue;
+        } else if (reg.has<ImmortalMode>(p)) {
+          // Immortal Pac-Man passes through chase/scatter ghosts the same way
+          // ghosts in EatenMode are walked through.
           continue;
         }
         return {g, GhostCollision::Type::lose};

@@ -19,6 +19,9 @@ void audio(entt::registry &reg, Audio &device) {
     device.playSfx(events.get<SoundEvent>(e).id);
     played.push_back(e);
   }
+  for (const entt::entity e : played) {
+    reg.destroy(e);
+  }
 
   // The frightened siren loops while any ghost is scared, the background
   // track loops otherwise. While the intro jingle is still playing, neither

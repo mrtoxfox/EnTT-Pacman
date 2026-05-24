@@ -12,6 +12,8 @@
 #include "constants.hpp"
 #include "comp/house.hpp"
 #include "comp/ghost.hpp"
+#include "comp/lives.hpp"
+#include "comp/score.hpp"
 #include "comp/sprite.hpp"
 #include "comp/target.hpp"
 #include "comp/player.hpp"
@@ -28,6 +30,8 @@ entt::entity makePlayer(entt::registry &reg) {
   reg.emplace<ActualDir>(e, playerSpawnDir);
   reg.emplace<Position>(e, playerSpawnPos);
   reg.emplace<PlayerSprite>(e, animera::SpriteID::pacman_beg_);
+  reg.emplace<Score>(e);
+  reg.emplace<Lives>(e);
   return e;
 }
 

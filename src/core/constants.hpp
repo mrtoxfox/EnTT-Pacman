@@ -11,6 +11,7 @@
 
 #include "util/pos.hpp"
 #include "util/dir.hpp"
+#include "util/sprites.hpp"
 
 // The width and height of the maze in tiles
 constexpr Pos tiles = {19, 22};
@@ -18,8 +19,17 @@ constexpr Pos tiles = {19, 22};
 constexpr int tileSize = 8;
 // The width and height of the maze in pixels
 constexpr Pos tilesPx = tiles * tileSize;
+// Height in pixels of the HUD strip drawn below the maze (lives + score).
+constexpr int hudHeight = tileSize;
+// The full logical canvas: maze on top, HUD strip below.
+constexpr Pos canvasPx = {tilesPx.x, tilesPx.y + hudHeight};
 // The amount of ticks that ghosts are scared for
 constexpr int ghostScaredTime = 40;
+
+// Number of lives the player starts with. Game ends when all are lost.
+constexpr int startingLives = 3;
+// Sprite used to represent a life in the HUD strip.
+constexpr animera::SpriteID lifeIconSprite = animera::SpriteID::pacman_2;
 
 // The amount of ticks left on the scared timer before scared ghosts
 // start flashing
@@ -29,6 +39,11 @@ constexpr int ghostScaredFlashRate = 4;
 
 // The total number of dots that the player must eat to win the game
 constexpr int dotsInMaze = 152;
+
+// Point values
+constexpr int dotPoints = 10;
+constexpr int energizerPoints = 50;
+constexpr int ghostPoints = 200;
 
 // Position where the player spawns
 constexpr Pos playerSpawnPos = {9, 16};
@@ -58,6 +73,15 @@ constexpr int chaseTicks = 40;
 // The frame rate. Game logic runs once every tileSize frames, so raising the
 // frame rate speeds up the whole game. Bumped from 20 to 30 for a faster pace.
 constexpr int fps = 30;
+
+// How long Pac-Man is immortal after being caught. Expressed in logic ticks.
+// 5 real-time seconds = (5 * fps) / tileSize logic ticks.
+constexpr int immortalTicks = (5 * fps) / tileSize;
+
+// Alpha (0-255) used by SDL_SetRenderDrawColor for the pause overlay
+constexpr int pauseOverlayAlpha = 160;
+// Alpha used by SDL_SetTextureAlphaMod while the player has ImmortalMode
+constexpr int immortalAlpha = 110;
 
 // Settings passed to Mix_OpenAudio when the audio device is opened
 constexpr int audioFrequency = 44100;

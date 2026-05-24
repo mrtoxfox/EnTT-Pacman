@@ -9,6 +9,7 @@
 #ifndef UTIL_SDL_QUAD_WRITER_HPP
 #define UTIL_SDL_QUAD_WRITER_HPP
 
+#include <cstdint>
 #include "pos.hpp"
 #include "sprites.hpp"
 #include <SDL_render.h>
@@ -22,6 +23,10 @@ public:
   void tilePos(Pos, Pos, double = 0.0);
   void tileTex(animera::SpriteRect);
   void tileTex(animera::SpriteID);
+
+  // Sets the alpha modulation applied to the shared texture for subsequent
+  // renders. Pass 255 to disable. Caller is responsible for resetting.
+  void setAlphaMod(std::uint8_t);
 
   void render() const;
 

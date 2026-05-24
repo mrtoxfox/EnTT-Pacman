@@ -40,6 +40,10 @@ void SDL::QuadWriter::tileTex(const animera::SpriteID id) {
   tileTex(getSpriteRect(id));
 }
 
+void SDL::QuadWriter::setAlphaMod(const std::uint8_t alpha) {
+  SDL_CHECK(SDL_SetTextureAlphaMod(texture, alpha));
+}
+
 void SDL::QuadWriter::render() const {
   SDL_CHECK(SDL_RenderCopyEx(
     renderer, texture, &srcRect, &dstRect, angle, nullptr, SDL_FLIP_NONE

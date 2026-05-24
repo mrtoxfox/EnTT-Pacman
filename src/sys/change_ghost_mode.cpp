@@ -9,7 +9,10 @@
 #include "change_ghost_mode.hpp"
 
 #include "comp/house.hpp"
+#include "comp/score.hpp"
 #include "comp/ghost.hpp"
+#include "comp/player.hpp"
+#include "core/constants.hpp"
 #include "comp/ghost_mode.hpp"
 #include "comp/sound_event.hpp"
 #include <entt/entity/registry.hpp>
@@ -17,7 +20,7 @@
 void ghostScared(entt::registry &reg) {
   const auto view = reg.view<Ghost>();
   for (const entt::entity e : view) {
-    reg.remove_if_exists<ChaseMode, ScatterMode>(e);
+    reg.remove_if_exists<ChaseMode, ScatterMode, ScaredMode>(e);
     // Ghosts in EatenMode don't get scared
     if (!reg.has<EatenMode>(e)) {
       reg.emplace<ScaredMode>(e);
@@ -44,6 +47,10 @@ void ghostEaten(entt::registry &reg, const entt::entity ghost) {
   reg.emplace<EatenMode>(ghost);
   reg.emplace<EnterHouse>(ghost);
   reg.emplace<SoundEvent>(reg.create(), SoundId::eatGhost);
+  const auto view = reg.view<Player, Score>();
+  for (const entt::entity e : view) {
+    view.get<Score>(e).value += ghostPoints;
+  }
 }
 
 void ghostScatter(entt::registry &reg) {
