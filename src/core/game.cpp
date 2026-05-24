@@ -90,8 +90,8 @@ bool Game::logic(Audio &device) {
   setScaredTarget(reg, maze, rand);
   setScatterTarget(reg);
   setEatenTarget(reg);
-  pursueTarget(reg, maze);
   leaveHouse(reg);
+  pursueTarget(reg, maze);
 
   const GhostCollision collision = playerGhostCollide(reg);
   if (collision.type == GhostCollision::Type::eat) {

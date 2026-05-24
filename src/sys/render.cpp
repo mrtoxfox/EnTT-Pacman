@@ -20,7 +20,7 @@ void playerRender(entt::registry &reg, SDL::QuadWriter &writer, const int frame)
   const auto view = reg.view<Position, ActualDir, DesiredDir, PlayerSprite>();
   for (const entt::entity e : view) {
     const Pos pos = view.get<Position>(e).p * tileSize;
-    const Dir actualDir = view.get<DesiredDir>(e).d;
+    const Dir actualDir = view.get<ActualDir>(e).d;
     const double angle = static_cast<double>(view.get<DesiredDir>(e).d) * 90.0;
     writer.tilePos(pos + toPos(actualDir, frame), Pos{tileSize, tileSize}, angle);
     writer.tileTex(view.get<PlayerSprite>(e).id + frame);

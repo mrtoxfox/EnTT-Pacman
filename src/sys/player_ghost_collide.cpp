@@ -26,7 +26,7 @@ bool collide(
 ) {
   if (pPos == gPos)               return true;
   if (pPos + toPos(pDir) != gPos) return false;
-  if (pDir != gDir)               return false;
+  if (pDir != opposite(gDir))     return false;
   return true;
 }
 

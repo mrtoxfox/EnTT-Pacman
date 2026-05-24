@@ -41,6 +41,20 @@ private:
     static_cast<std::size_t>(SoundId::loseMusic)
     - static_cast<std::size_t>(SoundId::intro) + 1;
 
+  // Audio's indexing relies on intro coming immediately after the last SFX id
+  // and on loseMusic being the last music id. Enforce both at compile time so
+  // reordering SoundId fails the build instead of silently playing the wrong
+  // file.
+  static_assert(
+    static_cast<int>(SoundId::win) + 1 == static_cast<int>(SoundId::intro),
+    "SoundId::intro must come immediately after the last SFX id"
+  );
+  static_assert(
+    static_cast<int>(SoundId::loseMusic)
+      >= static_cast<int>(SoundId::winMusic),
+    "SoundId::loseMusic must be the last music id"
+  );
+
   std::array<Mix_Chunk *, sfxCount> chunks{};
   std::array<Mix_Music *, musicCount> tracks{};
   SoundId current = SoundId::intro;

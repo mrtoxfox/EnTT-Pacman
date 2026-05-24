@@ -36,7 +36,7 @@ public:
   }
 
   bool outOfRange(const std::size_t i) const {
-    return i >= area();
+    return i >= static_cast<std::size_t>(area());
   }
 
   bool outOfRange(const Pos pos) const {
