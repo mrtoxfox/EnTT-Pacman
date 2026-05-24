@@ -9,6 +9,7 @@
 #ifndef CORE_CONSTANTS_HPP
 #define CORE_CONSTANTS_HPP
 
+#include <cstdint>
 #include "util/pos.hpp"
 #include "util/dir.hpp"
 #include "util/sprites.hpp"
@@ -104,25 +105,25 @@ constexpr int flashlightBackRays = 32;
 constexpr int flashlightHaloRadiusPx = 6;
 // Flashlight: perimeter ray count for the halo disc.
 constexpr int flashlightHaloRays = 20;
-// Pixels each ray that hit a wall is extended past the hit point so the
-// wall's inner surface (the side facing the light source) is included in the
-// lit polygon. Larger values show more wall material but can leak past corners.
+// Pixels each ray that hits a wall is extended past the hit point along its
+// own direction, so the wall's inner face (the side facing the light source)
+// is included in the lit polygon. The extension is per-ray, not per-tile, so
+// adjacent rays hitting different walls produce slightly slanted segments at
+// corners. Keep this small; larger values are more visible past inside
+// corners now that flashlightDarknessAlpha is fully opaque.
 constexpr int flashlightWallEdgePx = 3;
-// Color of the unlit overlay. Near-black; the small alpha cut lets the maze
-// stay faintly visible outside the beam.
+// Color of the unlit overlay. Pure black, fully opaque - outside the beam the
+// maze is invisible.
 constexpr std::uint8_t flashlightDarknessR = 0;
 constexpr std::uint8_t flashlightDarknessG = 0;
 constexpr std::uint8_t flashlightDarknessB = 0;
-// Alpha (0-255) of the unlit overlay. 235 = mostly opaque, with ~8% of the
-// underlying maze bleeding through as a dim outline.
-constexpr std::uint8_t flashlightDarknessAlpha = 235;
-// Light-yellow tint applied additively over the cone area after the darkness
-// overlay, so the beam reads as warm light instead of just an absence of dark.
-// Values are added to the underlying maze RGB - keep moderate so colors do
-// not clip to white.
-constexpr std::uint8_t flashlightBeamR = 90;
-constexpr std::uint8_t flashlightBeamG = 75;
-constexpr std::uint8_t flashlightBeamB = 20;
+constexpr std::uint8_t flashlightDarknessAlpha = 255;
+// Barely-visible warm tint added over the cone area after the darkness
+// overlay. Very low values so the beam reads as a faint yellow glow rather
+// than a bright light.
+constexpr std::uint8_t flashlightBeamR = 30;
+constexpr std::uint8_t flashlightBeamG = 25;
+constexpr std::uint8_t flashlightBeamB = 8;
 
 // Settings passed to Mix_OpenAudio when the audio device is opened
 constexpr int audioFrequency = 44100;

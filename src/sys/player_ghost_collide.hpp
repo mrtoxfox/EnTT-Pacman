@@ -13,6 +13,7 @@
 
 struct GhostCollision {
   entt::entity ghost;
+  entt::entity player;
   enum class Type {
     none, // no collision
     eat,  // ghost was eaten

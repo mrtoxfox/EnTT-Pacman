@@ -14,7 +14,7 @@ add_executable(pacman ${pacman_sources})
 if(CMAKE_TOOLCHAIN_FILE)
     message("Using SDL2 toolchain file")
     message(${CMAKE_TOOLCHAIN_FILE})
-    find_package(SDL2 CONFIG REQUIRED)
+    find_package(SDL2 2.0.18 CONFIG REQUIRED)
     find_package(SDL2_mixer CONFIG REQUIRED)
     target_link_libraries(pacman
         PRIVATE

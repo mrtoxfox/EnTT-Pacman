@@ -24,7 +24,7 @@ public:
   void init(Audio &);
   // Returns false when the user has asked to quit (ESC).
   bool input(Audio &, SDL_Scancode);
-  bool logic(Audio &);
+  void logic(Audio &);
   void render(SDL_Renderer *, SDL::QuadWriter &, int);
 
 private:

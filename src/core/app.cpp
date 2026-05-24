@@ -89,9 +89,7 @@ void Application::run() {
     // Game::logic is called once for each tile
     // Game::render is called for each pixel between tiles
     if (frame % tileSize == 0) {
-      if (!game.logic(audio)) {
-        quit = true;
-      }
+      game.logic(audio);
     }
 
     SDL_CHECK(SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, 255));

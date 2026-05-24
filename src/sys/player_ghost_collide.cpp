@@ -44,7 +44,7 @@ GhostCollision playerGhostCollide(entt::registry &reg) {
       const Dir ghostDir = ghosts.get<ActualDir>(g).d;
       if (collide(playerPos, ghostPos, playerDir, ghostDir)) {
         if (reg.has<ScaredMode>(g)) {
-          return {g, GhostCollision::Type::eat};
+          return {g, p, GhostCollision::Type::eat};
         } else if (reg.has<EatenMode>(g)) {
           continue;
         } else if (reg.has<ImmortalMode>(p)) {
@@ -52,9 +52,9 @@ GhostCollision playerGhostCollide(entt::registry &reg) {
           // ghosts in EatenMode are walked through.
           continue;
         }
-        return {g, GhostCollision::Type::lose};
+        return {g, p, GhostCollision::Type::lose};
       }
     }
   }
-  return {entt::null, GhostCollision::Type::none};
+  return {entt::null, entt::null, GhostCollision::Type::none};
 }

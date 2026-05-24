@@ -75,7 +75,7 @@ bool Game::input(Audio &device, const SDL_Scancode key) {
   return true;
 }
 
-bool Game::logic(Audio &device) {
+void Game::logic(Audio &device) {
   // The order of systems is very important in an ECS. Each system reads some
   // state and modifies some state. If the state isn't read and modified in the
   // right order, subtle bugs can occur. Make sure that the order of systems is
@@ -90,7 +90,7 @@ bool Game::logic(Audio &device) {
   // many dots they've eaten. So `dots` would have to be moved into a component
 
   if (state != State::playing) {
-    return true;
+    return;
   }
 
   if (scattering) {
@@ -124,8 +124,8 @@ bool Game::logic(Audio &device) {
   setScaredTarget(reg, maze, rand);
   setScatterTarget(reg);
   setEatenTarget(reg);
-  leaveHouse(reg);
   immortalOverride(reg);
+  leaveHouse(reg);
   pursueTarget(reg, maze);
 
   const GhostCollision collision = playerGhostCollide(reg);
@@ -133,22 +133,20 @@ bool Game::logic(Audio &device) {
     ghostEaten(reg, collision.ghost);
   }
   if (collision.type == GhostCollision::Type::lose) {
-    // Find the player that was caught. There's only one player entity, but
-    // iterate the view so we stay ECS-shaped.
-    const auto players = reg.view<Player, Lives, Score>();
-    for (const entt::entity p : players) {
-      Lives &lives = players.get<Lives>(p);
-      Score &score = players.get<Score>(p);
-      --lives.remaining;
-      score.value /= 2;
-      if (lives.remaining <= 0) {
-        state = State::lost;
-      } else {
-        reg.emplace<ImmortalMode>(p);
-        // Queue the death SFX as a regular sound event so it plays via the
-        // audio system on this same tick.
-        reg.emplace<SoundEvent>(reg.create(), SoundId::death);
-      }
+    // Only the caught player is affected. Other players (none today, but the
+    // ECS allows it) keep their lives and score.
+    const entt::entity p = collision.player;
+    Lives &lives = reg.get<Lives>(p);
+    Score &score = reg.get<Score>(p);
+    --lives.remaining;
+    score.value /= 2;
+    if (lives.remaining <= 0) {
+      state = State::lost;
+    } else {
+      reg.emplace<ImmortalMode>(p);
+      // Queue the death SFX as a regular sound event so it plays via the
+      // audio system on this same tick.
+      reg.emplace<SoundEvent>(reg.create(), SoundId::death);
     }
   } else if (dots == dotsInMaze) {
     state = State::won;
@@ -169,8 +167,6 @@ bool Game::logic(Audio &device) {
     device.playSfx(SoundId::win);
     device.playMusic(SoundId::winMusic, true);
   }
-
-  return true;
 }
 
 void Game::render(SDL_Renderer *renderer, SDL::QuadWriter &writer, const int frame) {

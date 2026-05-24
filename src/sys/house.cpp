@@ -34,13 +34,16 @@ void leaveHouse(entt::registry &reg) {
     if (view.get<Position>(e).p == outsideHouse) {
       reg.remove<LeaveHouse>(e);
     } else {
-      // leaveHouse is called after the set*Target systems so this will
-      // overwrite the target position. It's a little bit hacky but it
-      // works here.
+      // leaveHouse is called after the set*Target systems and after
+      // immortalOverride so this will overwrite the target position. It's a
+      // little bit hacky but it works here.
 
       // We actually need to do this because ghosts can sometimes get stuck
       // in the house. If their target is towards the bottom of the maze,
-      // they will move left and right without going up and out of the house
+      // they will move left and right without going up and out of the house.
+      // The post-immortalOverride placement also lets ghosts exit the house
+      // while the player is immortal; otherwise they would be redirected to
+      // the scatter corner instead of the door.
       view.get<Target>(e).p = outsideHouse;
     }
   }

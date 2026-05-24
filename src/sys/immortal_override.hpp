@@ -12,7 +12,9 @@
 // scatter corner so they walk away. Eaten and scared ghosts are left alone:
 // eaten ghosts must still reach the house; scared ghosts already wander.
 //
-// Must run AFTER all setXTarget functions and BEFORE pursueTarget.
+// Must run AFTER all setXTarget functions and BEFORE leaveHouse, so
+// leaveHouse can still steer house-exiting ghosts to the door instead of the
+// scatter corner this system would pick. Must also run before pursueTarget.
 void immortalOverride(entt::registry &);
 
 #endif

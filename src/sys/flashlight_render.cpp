@@ -5,6 +5,11 @@
 
 #include "flashlight_render.hpp"
 
+#include <SDL_version.h>
+#if !SDL_VERSION_ATLEAST(2, 0, 18)
+#error "Flashlight rendering needs SDL_RenderGeometry, added in SDL 2.0.18"
+#endif
+
 #include <cmath>
 #include <vector>
 #include <limits>
@@ -23,14 +28,18 @@ constexpr float pi_f = 3.14159265358979323846f;
 
 float facingRad(const Dir d) {
   // Screen coords: +x right, +y down. Matches the 90-deg rotation convention
-  // used by playerRender (DesiredDir * 90 degrees).
+  // used by playerRender (DesiredDir * 90 degrees). Dir::none falls back to
+  // the player's spawn direction so an entity that gets a Flashlight before
+  // its DesiredDir has been set still picks a valid orientation rather than
+  // silently aliasing to left.
   switch (d) {
     case Dir::up:    return -pi_f * 0.5f;
     case Dir::right: return  0.0f;
     case Dir::down:  return  pi_f * 0.5f;
     case Dir::left:  return  pi_f;
-    default:         return  pi_f;
+    case Dir::none:  return facingRad(playerSpawnDir);
   }
+  return 0.0f;
 }
 
 // Walks a ray from (ax, ay) in pixel space along the unit vector (dx, dy)
@@ -226,6 +235,8 @@ void flashlightRender(
   // does not flash bright for a frame on edge cases. With no cones drawn the
   // playfield ends up fully black.
   SDL_Texture *const prevTarget = SDL_GetRenderTarget(renderer);
+  SDL_BlendMode prevBlend = SDL_BLENDMODE_NONE;
+  SDL_CHECK(SDL_GetRenderDrawBlendMode(renderer, &prevBlend));
   SDL_CHECK(SDL_SetRenderTarget(renderer, overlay));
   SDL_CHECK(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
   SDL_CHECK(SDL_SetRenderDrawColor(
@@ -235,10 +246,14 @@ void flashlightRender(
   ));
   SDL_CHECK(SDL_RenderClear(renderer));
 
-  std::vector<SDL_Vertex> verts;
-  std::vector<int> indices;
-  verts.reserve(2 * (flashlightForwardRays + flashlightBackRays + 4));
-  indices.reserve(3 * (flashlightForwardRays + flashlightBackRays));
+  // Scratch buffers reused across frames so the steady-state render does no
+  // heap work. thread_local is defensive: SDL rendering is single-threaded
+  // here, but the qualifier costs nothing and keeps the buffers from being
+  // shared if a future change moves rendering off the main thread.
+  static thread_local std::vector<SDL_Vertex> verts;
+  static thread_local std::vector<int> indices;
+  verts.clear();
+  indices.clear();
 
   const SDL_Color clear{0, 0, 0, 0};
 
@@ -293,6 +308,10 @@ void flashlightRender(
       verts.data(), static_cast<int>(verts.size()),
       indices.data(), static_cast<int>(indices.size())
     ));
-    SDL_CHECK(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND));
   }
+
+  // Leave the renderer in whatever state we found it. The caller's expected
+  // default is SDL_BLENDMODE_NONE; passes that need a different mode (e.g.
+  // pauseOverlayRender) set it themselves on entry.
+  SDL_CHECK(SDL_SetRenderDrawBlendMode(renderer, prevBlend));
 }

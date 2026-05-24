@@ -50,6 +50,10 @@ and [SDL2_mixer](https://github.com/libsdl-org/SDL_mixer) for sound. CMake will
 find both if they're on your system. For details on how to install SDL2, see
 the [installation page](https://wiki.libsdl.org/Installation).
 
+SDL2 must be **2.0.18 or newer** - the flashlight renderer uses
+`SDL_RenderGeometry`, which was added in that release. The build will fail
+with a clear `#error` if an older SDL2 is found.
+
 If you're on MacOS,
 
 ```
