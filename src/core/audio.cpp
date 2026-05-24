@@ -20,16 +20,20 @@ struct SoundFile {
 // Where each sound is loaded from. Sound effects live in audio/sfx, music
 // tracks in audio/music. Paths are relative to the executable's directory.
 constexpr SoundFile soundFiles[] = {
-  {SoundId::chomp,      "audio/sfx/pacman_chomp.wav"},
-  {SoundId::energizer,  "audio/sfx/pacman_eatfruit.wav"},
-  {SoundId::eatGhost,   "audio/sfx/pacman_eatghost.wav"},
-  {SoundId::death,      "audio/sfx/pacman_death.wav"},
-  {SoundId::win,        "audio/sfx/pacman_extrapac.wav"},
-  {SoundId::intro,      "audio/music/pacman_beginning.wav"},
-  {SoundId::background, "audio/music/pacman_background.wav"},
-  {SoundId::siren,      "audio/music/pacman_ringtone.wav"},
-  {SoundId::winMusic,   "audio/music/pacman_intermission.wav"},
-  {SoundId::loseMusic,  "audio/music/pacman_ringtone_interlude.wav"},
+  {SoundId::chomp,        "audio/sfx/pacman_chomp.wav"},
+  {SoundId::energizer,    "audio/sfx/pacman_eatfruit.wav"},
+  {SoundId::eatGhost,     "audio/sfx/pacman_eatghost.wav"},
+  {SoundId::death,        "audio/sfx/pacman_death.wav"},
+  {SoundId::win,          "audio/sfx/pacman_extrapac.wav"},
+  // Bonus SFX reuse existing chunks (no dedicated assets yet)
+  {SoundId::bonusSpawn,   "audio/sfx/pacman_eatfruit.wav"},
+  {SoundId::bonusApplied, "audio/sfx/pacman_eatghost.wav"},
+  {SoundId::bonusExpired, "audio/sfx/pacman_chomp.wav"},
+  {SoundId::intro,        "audio/music/pacman_beginning.wav"},
+  {SoundId::background,   "audio/music/pacman_background.wav"},
+  {SoundId::siren,        "audio/music/pacman_ringtone.wav"},
+  {SoundId::winMusic,     "audio/music/pacman_intermission.wav"},
+  {SoundId::loseMusic,    "audio/music/pacman_ringtone_interlude.wav"},
 };
 
 bool isMusic(const SoundId id) {
@@ -101,10 +105,15 @@ Audio::~Audio() {
 }
 
 void Audio::playSfx(const SoundId id) {
+  // Return value intentionally ignored. The only failure mode at runtime is
+  // "all channels busy", which is recoverable (the sound is just dropped);
+  // SDL_CHECK would abort the game for an audio glitch.
   Mix_PlayChannel(-1, chunks[sfxIndex(id)], 0);
 }
 
 void Audio::playMusic(const SoundId id, const bool loop) {
+  // Return value intentionally ignored, see playSfx. We still record `current`
+  // so the audio system's "is the right track playing?" check stays in sync.
   Mix_PlayMusic(tracks[musicIndex(id)], loop ? -1 : 1);
   current = id;
 }

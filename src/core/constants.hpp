@@ -78,6 +78,13 @@ constexpr int fps = 30;
 // 5 real-time seconds = (5 * fps) / tileSize logic ticks.
 constexpr int immortalTicks = (5 * fps) / tileSize;
 
+// Bonus tuning. All values in logic ticks. The (N * fps) / tileSize idiom
+// converts real-time seconds to logic ticks (same as immortalTicks above).
+constexpr int bonusEffectTicks   = (10 * fps) / tileSize;
+constexpr int bonusLifeTicks     = ( 8 * fps) / tileSize;
+constexpr int bonusSpawnMinTicks = ( 8 * fps) / tileSize;
+constexpr int bonusSpawnMaxTicks = (15 * fps) / tileSize;
+
 // Alpha (0-255) used by SDL_SetRenderDrawColor for the pause overlay
 constexpr int pauseOverlayAlpha = 160;
 // Alpha used by SDL_SetTextureAlphaMod while the player has ImmortalMode

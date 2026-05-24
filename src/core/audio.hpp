@@ -49,9 +49,10 @@ private:
   // Audio's indexing relies on intro coming immediately after the last SFX id
   // and on loseMusic being the last music id. Enforce both at compile time so
   // reordering SoundId fails the build instead of silently playing the wrong
-  // file.
+  // file. The last SFX id is bonusExpired (the three bonus SFX were appended
+  // after `win`, so they shift this boundary).
   static_assert(
-    static_cast<int>(SoundId::win) + 1 == static_cast<int>(SoundId::intro),
+    static_cast<int>(SoundId::bonusExpired) + 1 == static_cast<int>(SoundId::intro),
     "SoundId::intro must come immediately after the last SFX id"
   );
   static_assert(

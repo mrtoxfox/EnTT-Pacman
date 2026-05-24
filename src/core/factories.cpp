@@ -21,6 +21,7 @@
 #include "comp/ghost_mode.hpp"
 #include "comp/chase_target.hpp"
 #include "comp/home_position.hpp"
+#include "comp/prev_position.hpp"
 #include <entt/entity/registry.hpp>
 
 entt::entity makePlayer(entt::registry &reg) {
@@ -29,6 +30,7 @@ entt::entity makePlayer(entt::registry &reg) {
   reg.emplace<DesiredDir>(e, playerSpawnDir);
   reg.emplace<ActualDir>(e, playerSpawnDir);
   reg.emplace<Position>(e, playerSpawnPos);
+  reg.emplace<PrevPosition>(e, playerSpawnPos);
   reg.emplace<PlayerSprite>(e, animera::SpriteID::pacman_beg_);
   reg.emplace<Score>(e);
   reg.emplace<Lives>(e);
@@ -40,6 +42,7 @@ namespace {
 entt::entity makeGhost(entt::registry &reg, const Pos home, const Pos scatter) {
   const entt::entity e = reg.create();
   reg.emplace<Position>(e, home);
+  reg.emplace<PrevPosition>(e, home);
   reg.emplace<HomePosition>(e, home, scatter);
   reg.emplace<LeaveHouse>(e);
   reg.emplace<ScatterMode>(e);
@@ -55,6 +58,7 @@ entt::entity makeGhost(entt::registry &reg, const Pos home, const Pos scatter) {
 entt::entity makeBlinky(entt::registry &reg, const entt::entity player) {
   const entt::entity e = makeGhost(reg, blinkyHome, blinkyScatter);
   reg.get<Position>(e).p = outsideHouse;
+  reg.get<PrevPosition>(e).p = outsideHouse;
   reg.emplace<BlinkyChaseTarget>(e, player);
   reg.emplace<GhostSprite>(e, animera::SpriteID::blinky_beg_);
   return e;

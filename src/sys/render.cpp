@@ -20,19 +20,37 @@
 #include "comp/ghost_mode.hpp"
 #include "util/dir_to_pos.hpp"
 #include "comp/immortal_mode.hpp"
+#include "comp/prev_position.hpp"
 #include <entt/entity/registry.hpp>
 
+namespace {
+
+// Linear interpolation from PrevPosition (start-of-tick tile) to Position
+// (end-of-tick tile) over the tileSize render frames of one logic tick.
+// Per-component division because Pos has no /int operator.
+Pos interpRenderPx(const Pos prev, const Pos curr, const int frame) {
+  const Pos prevPx = prev * tileSize;
+  const Pos currPx = curr * tileSize;
+  return {
+    prevPx.x + (currPx.x - prevPx.x) * frame / tileSize,
+    prevPx.y + (currPx.y - prevPx.y) * frame / tileSize,
+  };
+}
+
+}
+
 void playerRender(entt::registry &reg, SDL::QuadWriter &writer, const int frame) {
-  const auto view = reg.view<Position, ActualDir, DesiredDir, PlayerSprite>();
+  const auto view = reg.view<Position, PrevPosition, ActualDir, DesiredDir, PlayerSprite>();
   for (const entt::entity e : view) {
-    const Pos pos = view.get<Position>(e).p * tileSize;
-    const Dir actualDir = view.get<ActualDir>(e).d;
+    const Pos curr = view.get<Position>(e).p;
+    const Pos prev = view.get<PrevPosition>(e).p;
+    const Pos renderPx = interpRenderPx(prev, curr, frame);
     const double angle = static_cast<double>(view.get<DesiredDir>(e).d) * 90.0;
     const bool immortal = reg.has<ImmortalMode>(e);
     if (immortal) {
       writer.setAlphaMod(immortalAlpha);
     }
-    writer.tilePos(pos + toPos(actualDir, frame), Pos{tileSize, tileSize}, angle);
+    writer.tilePos(renderPx, Pos{tileSize, tileSize}, angle);
     writer.tileTex(view.get<PlayerSprite>(e).id + frame);
     writer.render();
     if (immortal) {
@@ -42,11 +60,13 @@ void playerRender(entt::registry &reg, SDL::QuadWriter &writer, const int frame)
 }
 
 void ghostRender(entt::registry &reg, SDL::QuadWriter &writer, const int frame) {
-  const auto view = reg.view<Position, ActualDir, GhostSprite>();
+  const auto view = reg.view<Position, PrevPosition, ActualDir, GhostSprite>();
   for (const entt::entity e : view) {
-    const Pos pos = view.get<Position>(e).p * tileSize;
+    const Pos curr = view.get<Position>(e).p;
+    const Pos prev = view.get<PrevPosition>(e).p;
+    const Pos renderPx = interpRenderPx(prev, curr, frame);
     const Dir actualDir = view.get<ActualDir>(e).d;
-    writer.tilePos(pos + toPos(actualDir, frame), Pos{tileSize, tileSize});
+    writer.tilePos(renderPx, Pos{tileSize, tileSize});
     const int dirOffset = (
       actualDir == Dir::none ? 0 : static_cast<int>(actualDir)
     );

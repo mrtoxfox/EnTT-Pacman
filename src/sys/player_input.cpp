@@ -11,6 +11,7 @@
 #include "comp/dir.hpp"
 #include "comp/player.hpp"
 #include "sys/can_move.hpp"
+#include "comp/position.hpp"
 #include <entt/entity/registry.hpp>
 
 namespace {
@@ -36,14 +37,21 @@ Dir readDir(const SDL_Scancode key) {
 
 }
 
-bool playerInput(entt::registry &reg, const SDL_Scancode key) {
+bool playerInput(entt::registry &reg, const MazeState &maze, const SDL_Scancode key) {
   const Dir dir = readDir(key);
   if (dir == Dir::none) {
     return false;
   }
-  auto view = reg.view<Player, DesiredDir>();
+  auto view = reg.view<Player, Position, ActualDir, DesiredDir>();
   for (const entt::entity e : view) {
     view.get<DesiredDir>(e).d = dir;
+    // wallCollide runs after movement, so a DesiredDir change made between
+    // ticks only takes effect one tile past the intended junction. Applying
+    // ActualDir here when the turn is valid at the current tile means the
+    // next movement step honors the input.
+    if (canMove(reg, maze, e, view.get<Position>(e).p, dir)) {
+      view.get<ActualDir>(e).d = dir;
+    }
   }
   return true;
 }

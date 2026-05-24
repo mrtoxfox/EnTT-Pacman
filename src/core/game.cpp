@@ -20,14 +20,22 @@
 #include "sys/movement.hpp"
 #include "core/factories.hpp"
 #include "sys/set_target.hpp"
+#include "sys/eat_bonus.hpp"
+#include "sys/spawn_bonus.hpp"
 #include "comp/sound_event.hpp"
 #include "sys/player_input.hpp"
+#include "sys/bonus_render.hpp"
+#include "sys/bonus_timeout.hpp"
 #include "comp/immortal_mode.hpp"
 #include "sys/pursue_target.hpp"
+#include "comp/bonus_spawner.hpp"
 #include "sys/immortal_timeout.hpp"
 #include "sys/immortal_override.hpp"
 #include "sys/change_ghost_mode.hpp"
+#include "sys/apply_ghost_speed.hpp"
+#include "sys/ghost_speed_timeout.hpp"
 #include "sys/player_ghost_collide.hpp"
+#include "sys/update_prev_position.hpp"
 
 void Game::init(Audio &device) {
   maze = makeMazeState();
@@ -36,6 +44,9 @@ void Game::init(Audio &device) {
   makePinky(reg, player);
   makeInky(reg, player, blinky);
   makeClyde(reg, player);
+  // Singleton holding the next-bonus countdown. Lives in the ECS so all
+  // transient game state stays in one place.
+  reg.emplace<BonusSpawner>(reg.create(), bonusSpawnMinTicks);
   // seeding a pseudo random number generator with a random source
   rand.seed(std::random_device{}());
   // The intro jingle plays once; the audio system starts the looping
@@ -68,7 +79,7 @@ bool Game::input(Audio &device, const SDL_Scancode key) {
     return true;
   }
   if (state == State::playing) {
-    playerInput(reg, key);
+    playerInput(reg, maze, key);
   }
   return true;
 }
@@ -106,14 +117,22 @@ bool Game::logic(Audio &device) {
   }
   ++ticks;
 
+  // Snapshot start-of-tick positions before any system mutates Position.
+  // Render interpolates PrevPosition -> Position over the next tileSize
+  // frames, which is what makes Speed and Slow effects look smooth.
+  updatePrevPosition(reg);
+
   movement(reg);
+  applyGhostSpeedExtraStep(reg, maze);
   wallCollide(reg, maze);
   dots += eatDots(reg, maze);
   if (eatEnergizer(reg, maze)) {
     ghostScared(reg);
   }
   ghostScaredTimeout(reg);
+  ghostSpeedTimeout(reg);
   immortalTimeout(reg);
+  bonusTimeout(reg);
   enterHouse(reg);
   setBlinkyChaseTarget(reg);
   setPinkyChaseTarget(reg);
@@ -152,6 +171,14 @@ bool Game::logic(Audio &device) {
     state = State::won;
   }
 
+  // Bonuses run after the win check so they don't interfere with the dot
+  // count, but before audio so their SoundEvents are flushed this tick.
+  spawnBonus(reg, maze, rand);
+  eatBonus(reg);
+  // applyGhostSpeedGate is the last logic call: it issues the NoMove tags
+  // that movement() will read on the next tick.
+  applyGhostSpeedGate(reg);
+
   // Play the sounds queued by the systems above and update the music. The
   // win and lose sounds are one-shots tied to the end of the game, so they
   // are played here directly. Skip the audio system on a state transition so
@@ -183,6 +210,7 @@ void Game::render(SDL_Renderer *renderer, SDL::QuadWriter &writer, const int fra
     const int renderFrame = (state == State::playing) ? frame : frozenFrame;
     fullRender(writer, animera::SpriteID::maze);
     dotRender(writer, maze);
+    bonusRender(renderer, reg);
     playerRender(reg, writer, renderFrame);
     ghostRender(reg, writer, renderFrame);
     if (state == State::paused) {

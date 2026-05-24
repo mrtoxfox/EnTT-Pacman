@@ -1,14 +1,19 @@
 # Task
-Analyze the current game loop, endgame mechanics, and scoring. Then create a detailed plan describing how the following features should work and how to implement them in this project, and save it to `prompts/plan.md` in markdown format.
-
-The plan must follow the project's ECS / EnTT architecture and conventions (see `CLAUDE.md`). Do not write any code yet.
+Design a universal bonus system for this EnTT-based Pac-Man clone, then plan its implementation. Do not write code yet.
 
 ## Features
-1. **Implement score system.** Pac-Man earns points for eating dots, energizers, and scared ghosts. Use standard arcade values (dots: 10, energizers: 50, ghosts: 200). Score lives on the player entity as a component.
-2. **Implement pause mechanic** with a pause screen. While paused, all game logic freezes and audio stops. The pause screen should follow the end-game screen style (translucent overlay over the frozen scene, not a new sprite). Key bindings are defined in item 5.
-3. **Implement lives for Pac-Man.** Pac-Man starts with 3 lives. When caught by a ghost, he loses 1 life and half his score (integer division). The game only ends when all 3 lives are gone.
-4. **Display scores and lives on screen.** Show the current score and remaining lives count as part of the in-game HUD. On the lose screen, also display the final score and lives spent (i.e. how many lives were lost before game over).
-5. **Pause screen text and remapped keys.** Show a centered "PAUSED" text on the pause screen, in the lose-screen visual style. Remap the keys: `Esc` exits the game; `Space` toggles the visual pause (overlay + text + audio paused); `P` toggles a debug pause that only freezes the game (no overlay, no text) so a single frame can be inspected. The debug pause must freeze at the exact moment the key is pressed (no extra frame, no sub-tile jump).
-6. **Winner screen parity with lose screen.** The win screen should also display the final score and spent-lives row, in the same end-screen style as the lose screen.
+- A bonus system that spawns bonuses randomly on valid dot cells of the maze, never on walls, centered in the tile grid.
+- Freeze bonus - freezes all ghosts for 10 seconds.
+- Slow bonus - halves ghost speed for 10 seconds.
+- Speed bonus - doubles ghost speed for 10 seconds.
 
-Stop after writing `prompts/plan.md`. I'll review it, edit it, then ask you to implement.
+## Constraints
+- The system must follow the project's ECS / EnTT conventions: bonuses are components plus their own systems, decoupled from existing ghost and player logic.
+- A sound plays on bonus spawn, on effect applied, and on effect expired.
+
+## Approach
+Let's think step by step. Before any code, explain your reasoning for each step:
+1. Examine - which existing components and systems are involved, and what state they expose.
+2. Design - how the bonus system is structured: spawning, collection, effect, expiry.
+3. Integrate - the minimal changes and where they fit in the `Game::logic()` system order.
+4. Order - what must be built first.

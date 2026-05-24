@@ -15,14 +15,19 @@
 // The game has no fruit, extra-life or intermission feature, so a few of the
 // bundled sounds are repurposed: pacman_eatfruit plays on an energizer,
 // pacman_extrapac on a win, pacman_intermission as the win-screen music and
-// pacman_ringtone_interlude as the lose-screen music.
+// pacman_ringtone_interlude as the lose-screen music. The three bonus ids
+// also reuse existing chunks (see audio.cpp); they can point at dedicated
+// files later without touching anything else.
 enum class SoundId : std::uint8_t {
   // Sound effects
-  chomp,       // pacman eats a dot
-  energizer,   // pacman eats an energizer
-  eatGhost,    // pacman eats a frightened ghost
-  death,       // pacman is caught by a ghost
-  win,         // the player clears the maze
+  chomp,         // pacman eats a dot
+  energizer,     // pacman eats an energizer
+  eatGhost,      // pacman eats a frightened ghost
+  death,         // pacman is caught by a ghost
+  win,           // the player clears the maze
+  bonusSpawn,    // a bonus appears on the maze
+  bonusApplied,  // the player picks up a bonus
+  bonusExpired,  // a bonus effect runs out
 
   // Music (every id from here on is a music track)
   intro,       // start jingle, played once
