@@ -18,6 +18,7 @@
 #include "comp/target.hpp"
 #include "comp/player.hpp"
 #include "comp/position.hpp"
+#include "comp/flashlight.hpp"
 #include "comp/ghost_mode.hpp"
 #include "comp/chase_target.hpp"
 #include "comp/home_position.hpp"
@@ -32,6 +33,7 @@ entt::entity makePlayer(entt::registry &reg) {
   reg.emplace<PlayerSprite>(e, animera::SpriteID::pacman_beg_);
   reg.emplace<Score>(e);
   reg.emplace<Lives>(e);
+  reg.emplace<Flashlight>(e);
   return e;
 }
 

@@ -1,357 +1,357 @@
-# Pause Text, Key Remap, and End-Screen Audio Implementation Plan
+# Flashlight with 2D Shadow Casting - Plan
 
-> **For agentic workers:** This plan describes how a pause-with-text screen, a remapped key set (Esc/Space/P), and clean end-screen audio should be implemented in this Pac-Man / EnTT codebase. Follow the project's ECS conventions exactly (see `CLAUDE.md`). Do not modify generated sprite files (`src/util/sprites.*`). Do not introduce post-EnTT-3.4.0 API.
+Working notes for `prompts/prompt.md`. Pure planning, no code yet. Targets the EnTT 3.4.0 / SDL2 / C++17 conventions in `CLAUDE.md`.
 
-**Goal:** Replace the current single pause behavior (Esc/P both toggle a dim overlay) with three distinct keys (Esc quits, Space pauses with overlay + "PAUSED" text, P is a debug pause that only freezes). Ensure the win SFX/music play exclusively on the win screen, and confirm the win screen shows the same score + spent-lives summary as the lose screen.
+## Context recap
 
-**Architecture:** All changes stay inside the existing ECS pattern. Pause variants are values in the existing `Game::State` enum; their behavioral difference lives entirely in `Game::render`. ESC quitting flows through a new `bool` return from `Game::input` consumed by `Application::run`. End-screen audio cleanliness comes from skipping the audio system on the transition tick so its music-management loop doesn't fight the one-shot win/lose music. No new dependencies. No sprite changes.
+- Logical canvas: 152x184 px. Playfield is the top `tilesPx = 152x176`. HUD is the bottom 8-px strip.
+- Maze grid: 19x22 tiles of 8 px. Walls (`Tile::wall`) and the ghost-house door (`Tile::door`) are opaque. Dots, energizers, and empty space are transparent.
+- Loop is two-rate: `Game::logic` runs every 8 frames, `Game::render` runs every frame and receives `frame % tileSize` as the sub-tile pixel offset.
+- Sprite facing in `playerRender` uses `DesiredDir` for the rotation angle and `ActualDir` for the sub-tile motion offset (`toPos(actualDir, frame)`).
+- Pause is render-only: `state == paused` adds the dim overlay + PAUSED text; `pausedDebug` freezes the frame with no overlay. Both freeze `renderFrame` via `frozenFrame` already.
+- Tunnel wraps only on the logic side (movement at `y=10`). Rendering does not wrap. The cone math must not wrap either.
 
-**Tech Stack:** C++17, EnTT 3.4.0 (bundled), SDL2, SDL2_mixer. No tests, no linter. Manual play-test only.
+## Step 1 - Branch: three strategies
 
----
+### Strategy A - Ray-cast visibility polygon
 
-## 0. Current State (read this first)
+Build the lit shape as two triangle fans (forward + back) in pixel space:
 
-These are the facts the plan builds on. Verify each by reading the cited line before changing it.
+- Apex = player center in pixels, including sub-tile offset.
+- Cast N rays per cone uniformly across `[-halfAngle, +halfAngle]` around facing.
+- Walk each ray on the tile grid with DDA. Stop at the first `Tile::wall` or `Tile::door`, or at the configured beam length, whichever comes first. Out-of-maze tiles count as walls.
+- Polygon vertices: apex + N+1 ray endpoints in order. Render as a triangle fan with `SDL_RenderGeometry`.
+- Optionally augment by emitting 3 rays per wall corner inside the cone (corner angle, `+epsilon`, `-epsilon`) so the polygon vertices snap to true corners and shadow edges are pixel-crisp.
 
-- **Game state machine** in `src/core/game.hpp:29-34` is `enum class State { playing, paused, won, lost }`. `Game::logic` early-returns when `state != playing` (`game.cpp:76-78`). `Game::input` is `void` and forwards keys when playing (`game.cpp:46-60`). Both Esc and P currently toggle pause to the same `paused` state.
-- **`Game::render` (`game.cpp:156-176`)** already calls `summaryRender` for both `won` and `lost` (lines 170-175), and uses `pauseOverlayRender` for `paused`. The summary draws spent-life icons + the final score; it works for both end states today.
-- **The two-rate loop** is in `src/core/app.cpp:73-99`: `Game::logic(audio)` runs every `tileSize` (8) frames, `Game::render(...)` every frame. The keydown branch (`app.cpp:81-83`) just calls `game.input(...)` and discards the return value.
-- **Audio device** is owned by `Application::run`. `Audio::pauseAll` / `Audio::resumeAll` already exist (`core/audio.hpp:32-33`, `core/audio.cpp:112-120`).
-- **End-screen audio block** is `game.cpp:144-151`: `audio(reg, device)` runs unconditionally, then the lost / won branch plays the one-shot SFX + music. The unconditional `audio()` call is the source of the bug: on the tick the state transitions, `sys/audio.cpp` sees the music isn't the current `wanted` (background/siren) and restarts it, producing a brief flash of the wrong track right before the end music takes over.
-- **Render pipeline:** `pauseOverlayRender` (`sys/render.cpp:92-98`) draws a translucent black `SDL_RenderFillRect` over the whole viewport. There's a 3x5 bitmap font of digits in the anonymous namespace (`glyphBits`, `drawDigit`, `drawNumber`, `numberWidth`) used by `summaryRender` / `hudRender`. There is no letter font yet, and no `pause` sprite (sprites are generated by Animera).
-- **No `pause` sprite.** `src/util/sprites.*` is generated and **must not be hand-edited**. "PAUSED" text must be drawn procedurally.
-- **EnTT 3.4.0 surface only:** `emplace<T>`, `get<T>`, `has<T>`, `remove<T>`, `remove_if_exists<T>`, `view<...>` with `view.get<T>(e)`.
+Compositing: render target texture, cleared to opaque black, draw both polygons with alpha 0 under `SDL_BLENDMODE_NONE`, blit back with `SDL_BLENDMODE_BLEND`.
 
----
+### Strategy B - Tile-level BFS visibility mask
 
-## 1. File Structure
+Treat lit tiles as a discrete set:
 
-### Modified files
+- From the player tile, BFS to neighbors through non-wall tiles only.
+- For each visited tile, mark lit if its center lies inside the cone polygon (forward or back) and the path that reached it does not cross a wall.
+- Render the darkness overlay, then carve out the lit tiles as 8x8 transparent quads.
 
-- `src/core/game.hpp` — add `State::pausedDebug`; change `Game::input` signature to return `bool` (false = quit).
-- `src/core/game.cpp` — split the pause toggle into Esc/Space/P branches; include `pausedDebug` in the `render` playing-branch (freeze, no overlay); skip the `audio(reg, device)` call on the transition tick to `won` / `lost`.
-- `src/core/app.cpp` — check `game.input(...)` return; set `quit = true` on false.
-- `src/sys/render.hpp` — declare `pauseTextRender(SDL_Renderer *)`.
-- `src/sys/render.cpp` — generalize the 3x5 glyph drawer to take bits + scale; add a 6-letter table for "PAUSED"; implement `pauseTextRender` (centered on the maze area, scaled, white).
-- `README.md` — add a Controls section listing the new key set.
-- `CLAUDE.md` — document the `State` variants, the `Game::input` bool return, and the deliberate skip of `audio()` on transition.
+### Strategy C - Shader-style stencil mask via 2D shadow volumes
 
-### No new files
-The whole change set is contained in existing files. No new components, no new systems.
+Cone first, shadows second:
 
----
+- Build the two cone polygons (forward, back) as plain wedge trapezoids in pixel space, no rays.
+- Draw them transparent into a black render target as in A.
+- For every wall tile whose AABB intersects either cone bbox, compute the two "silhouette" corners (the corners most extreme in angle from the apex). Extrude a black quad from those corners outward away from the apex, past the cone's far edge.
+- Draw each shadow quad as opaque black with `SDL_BLENDMODE_NONE`, re-occluding the parts of the cone behind walls.
 
-## 2. Design Decisions (and the reasoning)
+This is the classic 2D shadow-volume approach used by raycasters and dynamic-light demos.
 
-These are the calls already made. Don't quietly re-decide them; if you disagree, surface it before changing the plan.
+## Step 2 - Evaluate
 
-### 2.1. `pausedDebug` is a separate State, not a bool flag
+Scores 1 to 5, higher is better.
 
-Adding a fifth value to `Game::State` keeps the state machine in one place and reuses the existing `state != playing` guard in `Game::logic` (which already freezes everything for any non-playing state). The visual difference between `paused` and `pausedDebug` lives entirely in `Game::render`. Adding a bool flag would mean checking it in `render` AND in `input` AND duplicating the freeze guard — a worse split.
+| Criterion | A: ray polygon | B: tile BFS | C: shadow volumes |
+|-----------|---------------:|------------:|------------------:|
+| Performance in two-rate loop | 4 | 5 | 3 |
+| Visual quality (crisp edges, sub-tile slide) | 5 | 1 | 4 |
+| Wall occlusion accuracy | 4 (5 with corner rays) | 3 | 4 |
+| Code complexity | 4 | 5 | 2 |
+| ECS / EnTT 3.4.0 fit and integration risk | 5 | 4 | 4 |
+| **Total** | **22** | **18** | **17** |
 
-### 2.2. ESC quits via a `bool` return from `Game::input`
+Notes:
 
-`SDL_QUIT` already exists as a quit signal in `Application::run`, but it's only triggered by the OS (window close). For a keyboard ESC quit we need the keydown branch to be able to signal quit. The cleanest plumbing: change `Game::input` to return `bool` (true = continue, false = quit) and have the caller flip `quit = true; break;` on false. Alternatives (storing a `quitRequested` member on Game, or posting `SDL_QUIT`) are more indirection for the same effect.
+- A: per-frame work is N rays * shortish DDA walks + one `SDL_RenderGeometry` call per cone. At 30 fps with N=64 rays per cone and a 19x22 grid, this is hundreds of microseconds on any modern CPU. No allocations per frame if vertex storage is reused.
+- B: BFS itself is fast, but tile-quantized lighting cannot slide smoothly with the sub-tile sprite offset. The cone outline visibly snaps in 8-px steps every logic tick. This fails the "smooth cone motion at sub-tile resolution" criterion in the prompt.
+- C: correct in principle, but the boolean (cone minus shadow union) is fiddly. Care needed for walls that straddle the cone boundary, walls whose silhouette extrusion exits the playfield, and overlapping shadows. More code, more failure modes.
 
-### 2.3. "PAUSED" is drawn with the existing 3x5 font, scaled up
+## Step 3 - Prune
 
-The canvas is 152x176 px (maze area). Adding SDL_ttf for a single word is overkill. The existing digit font already lives in `sys/render.cpp` and is already used for two centered/righted text blocks; extending it with the six letters of "PAUSED" is a tiny additive change. Scale 4 → glyphs are 12x20 px, the word is 92 px wide, fitting comfortably and readable on the small canvas.
+Drop **B (tile BFS)**. Reason: the cone's apex must follow Pac-Man's interpolated pixel position; a tile-level mask can only resolve to 8-px steps, so the lit region snaps every tile boundary even though the sprite slides smoothly. That is the exact failure mode the prompt calls out under "sub-tile interpolation". The other criteria don't save it: even when the BFS path is correct, the rendered edge looks like Minecraft, not a flashlight.
 
-The drawer is generalized to `drawGlyph(renderer, bits, x, y, scale)` so the digit path (`drawDigit`) and the letter path (`pauseTextRender`) share the same code. No duplication.
+## Step 4 - Deepen the two survivors
 
-### 2.4. Pause overlay stays at `pauseOverlayAlpha = 160` (semi-transparent)
+### A - Ray-cast visibility polygon (deepened)
 
-The user spec says debug pause "doesn't show pause screen or dim screen", which means the normal pause DOES dim. Keeping the existing alpha 160 dim is consistent with that. "Follow lose screen style" is interpreted as "prominent centered text on a coverage overlay", not "fully opaque background" — the semi-transparent dim is preserved.
+**Cone geometry.**
 
-### 2.5. Skip `audio()` on transition to won/lost
+- Forward cone: triangle fan with apex at the player center pixel, plus `N+1` perimeter vertices distributed across `[facing - halfFwd, facing + halfFwd]`. Far cap is `lengthFwd` tiles.
+- Back cone: same construction, facing rotated 180 deg, with `halfBack` and `lengthBack`.
+- Facing comes from the player's `DesiredDir`. That is what drives `playerRender`'s sprite rotation, so the cone visually matches the sprite. At standstill, `DesiredDir` keeps the last requested direction (consistent with the requirement "cone keeps whatever direction he was last facing").
 
-When `state` becomes `won` or `lost` during a logic tick, calling `audio(reg, device)` afterward will compare `device.currentMusic()` against the music-management loop's `wanted` (background or siren). On a state-transition tick, the just-set lose/win music isn't yet "current" (we play it after `audio()`), but the previously-playing track also isn't `wanted` in the new context, so `audio()` calls `playMusic(wanted, true)` and restarts background/siren. Then the lost/won branch immediately overwrites it with `loseMusic` / `winMusic`. That's the "wrong music briefly plays on lose" symptom.
+**Apex math (sub-tile).**
 
-Fix: gate `audio(reg, device)` behind `state == playing`. The else branches play the end-screen one-shots directly without the audio system interfering. The SoundEvent queue is empty on the transition tick (the death event is queued only when `lives > 0`, which is a non-transition path), so dropping the `audio()` call costs nothing on the transition tick. On all subsequent ticks the early `state != playing` return at the top of `Game::logic` keeps `audio()` from being called anyway.
-
-### 2.6. Win screen already shows score + spent lives
-
-`Game::render`'s `won` branch already calls `summaryRender(renderer, writer, reg)` (line 171), and `summaryRender` draws the same spent-life icons + score as the lose summary. No code change is needed for the visual parity item; the plan still verifies it during the play-through.
-
-### 2.7. Both pause variants pause audio
-
-Both `paused` and `pausedDebug` call `Audio::pauseAll` on enter and `Audio::resumeAll` on exit. The user spec emphasizes "freeze the game" for debug pause; keeping audio playing during a frozen frame is jarring, so silence is the better default. If a future use case wants debug pause with audio (e.g. listening to a track), that's a one-line removal.
-
----
-
-## 3. Implementation Tasks
-
-Each task is a self-contained change. Build after each task. Commit after each task.
-
-The build command throughout is, from the project root:
-```bash
-cd build && cmake --build . && ./pacman
+```
+apex.x = pos.x * tileSize + tileSize/2 + offset(actualDir, frame).x
+apex.y = pos.y * tileSize + tileSize/2 + offset(actualDir, frame).y
 ```
 
-### Task 1 — Add `pausedDebug` to `Game::State` and switch `input` to `bool`
+`offset(actualDir, frame)` is what `playerRender` already uses via `toPos(ActualDir, frame)`. Using the same expression keeps the cone apex glued to the sprite center across all 8 sub-tile positions.
 
-**Files:**
-- Modify: `src/core/game.hpp`
+**Ray walk (DDA on tile grid).**
 
-Add a new enum value and change the `input` declaration. Document the bool contract with a one-line comment.
+For each ray of angle `theta` and length cap `L`:
 
-```cpp
-public:
-  void init(Audio &);
-  // Returns false when the user has asked to quit (ESC).
-  bool input(Audio &, SDL_Scancode);
-  bool logic(Audio &);
-  void render(SDL_Renderer *, SDL::QuadWriter &, int);
+1. Convert `(cos theta, sin theta)` into an `(dx, dy)` step.
+2. Walk the tile grid with the standard slab/DDA algorithm, alternately advancing to the next vertical or horizontal tile boundary, whichever is closer.
+3. After each step, sample the tile. If `Tile::wall` or `Tile::door`, terminate at the exact intersection point with the wall edge. If outside the maze AABB, terminate at the AABB edge (this also disables tunnel-wrap leakage at `y=10`).
+4. If accumulated distance exceeds `L * tileSize`, terminate at distance `L * tileSize`.
 
-private:
-  enum class State {
-    playing,
-    paused,       // SPACE: freeze + dim overlay + "PAUSED" text
-    pausedDebug,  // P: freeze only, no overlay (lets you inspect the frame)
-    won,
-    lost
-  };
-```
+This gives sub-pixel-accurate hit points, which is what makes the edges crisp.
 
-Build will fail until Task 2/3 line up the implementation and caller. That's expected.
+**Corner ray augmentation (for pixel-true edges).**
 
-### Task 2 — Rewrite `Game::input` for the new key set
+Pure uniform sampling at N=64 already looks clean at 152x176 logical resolution. For pixel-perfect shadow edges that converge to corners:
 
-**Files:**
-- Modify: `src/core/game.cpp`
+- For each wall corner inside the cone bbox, compute its angle from the apex. If the angle lies in the cone arc, emit three rays: at the corner angle and at `±0.5 degree`. The two epsilon rays "slip past" the corner on either side, producing the umbra/penumbra-free crisp wedge.
+- Sort the union of (uniform rays + corner rays) by angle so the triangle-fan winding stays consistent.
 
-Three branches: Esc returns false; Space toggles `paused`; P toggles `pausedDebug`. Each pause path pauses audio on enter and resumes on exit. All other keys still go to `playerInput` only while playing.
+Recommended starting point: 32 uniform rays per cone, no corner rays. Promote to corner rays only if visible aliasing shows up in playtesting.
 
-```cpp
-bool Game::input(Audio &device, const SDL_Scancode key) {
-  if (key == SDL_SCANCODE_ESCAPE) {
-    return false;
-  }
-  if (key == SDL_SCANCODE_SPACE) {
-    if (state == State::playing) {
-      state = State::paused;
-      device.pauseAll();
-    } else if (state == State::paused) {
-      state = State::playing;
-      device.resumeAll();
-    }
-    return true;
-  }
-  if (key == SDL_SCANCODE_P) {
-    if (state == State::playing) {
-      state = State::pausedDebug;
-      device.pauseAll();
-    } else if (state == State::pausedDebug) {
-      state = State::playing;
-      device.resumeAll();
-    }
-    return true;
-  }
-  if (state == State::playing) {
-    playerInput(reg, key);
-  }
-  return true;
-}
-```
+**Narrow corridors, intersections, side branches.**
 
-Note: the two pause toggles are not interchangeable. If you're in `paused`, P does nothing (and vice-versa). That's deliberate; mixing toggles would let the user end up in the wrong state without realizing.
+- Inside a 1-tile-wide corridor, rays clip on the side walls within a few pixels. The lit region narrows to the corridor width once the sprite moves into it.
+- At a T-junction, the cone enters the perpendicular passage only along the angular slice that "sees through" the opening. Rays into the opening pass; rays into the wall stop on the wall. Side branches outside the cone's angular span stay dark by construction.
+- A side branch fully inside the cone's angular span and not occluded by a wall lights up. A side branch occluded by a wall corner ends in a shadow wedge cast by that corner. Both behaviors are correct without special-case code.
 
-### Task 3 — Handle the bool return in `Application::run`
+**Tunnel at y=10.**
 
-**Files:**
-- Modify: `src/core/app.cpp`
+Maze AABB acts as the outer wall. Rays leaving the playfield horizontally on row 10 terminate at the screen edge. Light does not appear on the opposite side. This matches the prompt.
 
-The keydown branch must now read the return and quit on false.
+**Ghost-house door.**
 
-```cpp
-} else if (e.type == SDL_KEYDOWN) {
-  if (!game.input(audio, e.key.keysym.scancode)) {
-    quit = true;
-    break;
-  }
-}
-```
+Treated identically to `Tile::wall` in the ray walk's stop test. Light cannot enter the ghost house through the door.
 
-Build. The game should now quit on Esc.
+**Per-frame cost.**
 
-### Task 4 — Render: include `pausedDebug` in the play branch, skip overlay/text
+- 30 fps render: `(64 + 32) * 2 = 192` rays per frame in the starting config (forward 64, back 32). Each DDA walk is at worst `lengthFwd + 1` tile steps (~7) plus a few constant-time tile lookups. Order of low tens of microseconds per ray, total a few hundred microseconds.
+- One `SDL_RenderGeometry` call per cone (2 calls per frame). The render target reuse means no allocation in steady state.
+- Logic loop is untouched: the cone is render-only and pulls live data from the registry each render.
 
-**Files:**
-- Modify: `src/core/game.cpp`
+**Existing overlays.**
 
-Both pause variants share the freeze (renderFrame = 0), but only `paused` draws the overlay and text. Use `state == State::playing ? frame : 0` to pick the render frame, so any non-playing rendered state freezes cleanly.
+- `playing`, `paused`, `pausedDebug`: render flashlight after world sprites and before HUD. Pause overlay and PAUSED text both render after the flashlight, so the text stays bright over the darkness.
+- `won`, `lost`: skip the flashlight entirely. The end screens use `fullRender(SpriteID::win|lose)` plus `summaryRender` and stay fully lit (matches the existing behavior on game end).
+- HUD strip (`y >= tilesPx.y`) is excluded by setting the render-target texture size to `tilesPx` and blitting only into the playfield rect.
 
-```cpp
-void Game::render(SDL_Renderer *renderer, SDL::QuadWriter &writer, const int frame) {
-  if (state == State::playing || state == State::paused || state == State::pausedDebug) {
-    // Snap sub-tile motion and animation cycling when paused so sprites freeze
-    // cleanly under the dim overlay instead of flickering at logic boundaries.
-    // pausedDebug freezes too, but skips the overlay and text.
-    const int renderFrame = (state == State::playing) ? frame : 0;
-    fullRender(writer, animera::SpriteID::maze);
-    dotRender(writer, maze);
-    playerRender(reg, writer, renderFrame);
-    ghostRender(reg, writer, renderFrame);
-    if (state == State::paused) {
-      pauseOverlayRender(renderer);
-      pauseTextRender(renderer);
-    }
-    hudRender(renderer, writer, reg);
-  } else if (state == State::won) {
-    fullRender(writer, animera::SpriteID::win);
-    summaryRender(renderer, writer, reg);
-  } else if (state == State::lost) {
-    fullRender(writer, animera::SpriteID::lose);
-    summaryRender(renderer, writer, reg);
-  }
-}
-```
+**Pause behavior.**
 
-The `won` / `lost` branches are unchanged from the current code — both already call `summaryRender`.
+`Game::render` already freezes `renderFrame` to `frozenFrame` outside `playing`. The flashlight uses `renderFrame` for the sub-tile apex offset, so the cone freezes with the sprite. The world state (player Position, DesiredDir, ActualDir) does not change while paused, so the cone polygon is identical frame-to-frame during the freeze. PAUSED text overdraws cleanly.
 
-### Task 5 — Add letter glyphs and `pauseTextRender`
+**Sprite coverage at the apex.**
 
-**Files:**
-- Modify: `src/sys/render.hpp`, `src/sys/render.cpp`
+The forward cone starts at the apex (a single point), so very close to the apex the lit width is near zero. Pac-Man's sprite is 8x8 centered on the apex. To guarantee his sprite is fully lit:
 
-Declare the new function in the header alongside `pauseOverlayRender`:
+- Pick `lengthFwd` and `halfFwd` so the cone width at distance 4 px exceeds 8 px. With `halfFwd = 35 deg`, the width at 4 px is `2 * 4 * tan(35) ~= 5.6 px` - too narrow.
+- Solution: the back cone, with `halfBack = 75 deg` and `lengthBack = 2`, plus a forward cone with `halfFwd = 30 deg`, jointly cover the apex disc. The union of the two fans at distance 4 px from the apex spans roughly 360 deg minus two narrow side wedges (about 60 deg total), enough to cover the sprite center. Pac-Man's 8x8 sprite extends 4 px in any cardinal direction, so the worst case is the two "side" wedges directly perpendicular to facing.
 
-```cpp
-// Draws "PAUSED" centered on the maze area, on top of the pause overlay.
-void pauseTextRender(SDL_Renderer *);
-```
+If a 4-px side strip of the sprite peeks into the dark, fall back to a one-time fix: add a tiny circular safe disc (radius 6 px) at the apex as an extra polygon. The prompt explicitly allows this ("no extra halo logic unless the cone math fails to cover his sprite"). Plan to inspect this in the first build and only add the disc if the gap is visible.
 
-In `render.cpp`, generalize the existing digit drawer to take bits + scale, then add a 6-letter table and the renderer:
+**Dots and energizers do not affect lighting.**
 
-```cpp
-namespace {
+The flashlight system reads the player's `Position` and `DesiredDir`, the maze grid for occlusion, and nothing else. Energizer pickup, ghost mode, score - all irrelevant. The cone constants in `constants.hpp` are fixed.
 
-constexpr int glyphW = 3;
-constexpr int glyphH = 5;
-constexpr int glyphSpacing = 1;
+**Wall edges inside the lit region.**
 
-constexpr std::uint16_t digitBits[10] = { /* existing digits */ };
+The maze is one large sprite (`SpriteID::maze`) drawn in `fullRender` before the flashlight. The flashlight only modulates alpha via the overlay; it never touches the underlying RGB. So wall edges render as their normal continuous lines wherever the overlay punches a hole, regardless of where the cone arc falls.
 
-// Letters used by pauseTextRender. Indices match "PAUSED".
-constexpr std::uint16_t pausedLetterBits[6] = {
-  0b111'101'111'100'100, // P
-  0b010'101'111'101'101, // A
-  0b101'101'101'101'111, // U
-  0b111'100'111'001'111, // S
-  0b111'100'111'100'111, // E
-  0b110'101'101'101'110, // D
-};
+**SDL2 compositing.**
 
-void drawGlyph(SDL_Renderer *renderer, std::uint16_t bits, int x, int y, int scale) {
-  for (int row = 0; row != glyphH; ++row) {
-    for (int col = 0; col != glyphW; ++col) {
-      const int shift = 14 - (row * glyphW + col);
-      if ((bits >> shift) & 1) {
-        const SDL_Rect px{x + col * scale, y + row * scale, scale, scale};
-        SDL_CHECK(SDL_RenderFillRect(renderer, &px));
-      }
-    }
-  }
-}
+- Render target texture: `SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, tilesPx.x, tilesPx.y)`. Mark `SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND)` so the final blit honors alpha.
+- Cache the texture on `Game` (the prompt explicitly permits this as the one allowed piece of non-ECS state). Recreate only if the renderer is lost.
+- Per frame:
+  1. `SDL_SetRenderTarget(renderer, overlay)`.
+  2. `SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE)`.
+  3. `SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); SDL_RenderClear(renderer);`.
+  4. Build vertex arrays for forward + back cones. Each vertex has `color = {0, 0, 0, 0}` (transparent black). Call `SDL_RenderGeometry(renderer, nullptr, verts, n, indices, m)` once per cone.
+  5. `SDL_SetRenderTarget(renderer, nullptr)`.
+  6. `SDL_RenderCopy(renderer, overlay, nullptr, &playfieldRect)` where `playfieldRect = {0, 0, tilesPx.x, tilesPx.y}`.
+- `SDL_RenderGeometry` is available since SDL 2.0.18 (released 2022-01). Homebrew, current Debian/Ubuntu, current vcpkg, and AppVeyor's vcpkg all ship newer SDL2. The README and PR description must record this minimum version.
 
-void drawDigit(SDL_Renderer *renderer, const int digit, const int x, const int y) {
-  drawGlyph(renderer, digitBits[digit], x, y, 1);
-}
+Triangle-fan as indexed triangles: for `N+1` rim vertices plus apex at index 0, indices are `(0, 1, 2), (0, 2, 3), ..., (0, N, N+1)`.
 
-// existing explodeDigits / numberWidth / drawNumber unchanged
+### C - 2D shadow volumes (deepened, for honest comparison)
 
-}
+**Geometry.**
 
-void pauseTextRender(SDL_Renderer *renderer) {
-  constexpr int scale = 4;
-  constexpr int letterW = glyphW * scale;
-  constexpr int letterH = glyphH * scale;
-  constexpr int spacing = glyphSpacing * scale;
-  constexpr int count = sizeof(pausedLetterBits) / sizeof(pausedLetterBits[0]);
-  constexpr int textW = count * letterW + (count - 1) * spacing;
-  constexpr int x0 = (tilesPx.x - textW) / 2;
-  constexpr int y0 = (tilesPx.y - letterH) / 2;
+- Cone polygons: two trapezoids built once per frame as in the prompt's `flashlight.md` original sketch. No rays.
+- For each wall tile with AABB overlapping the cone bbox:
+  - Compute the angle from the apex to each of the wall's 4 corners.
+  - Pick the two corners with extreme angles (one CW-most, one CCW-most). These are the silhouette.
+  - Extrude each silhouette corner radially outward by `extrudeLen` (must exceed cone length so the shadow exits the cone).
+  - Form a quad: `[corner1, corner2, extrude2, extrude1]`.
 
-  SDL_CHECK(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
-  SDL_CHECK(SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255));
-  int x = x0;
-  for (int i = 0; i != count; ++i) {
-    drawGlyph(renderer, pausedLetterBits[i], x, y0, scale);
-    x += letterW + spacing;
-  }
-}
-```
+**Rendering order on the render target.**
 
-`pauseTextRender` is intentionally outside the anonymous namespace (it needs external linkage). It can still see anonymous-namespace members because they live in the same translation unit.
+1. Clear with opaque black.
+2. Draw forward cone polygon and back cone polygon as transparent (alpha 0) with `SDL_BLENDMODE_NONE`. Cone-shaped holes appear.
+3. For each shadow quad, draw it as opaque black with `SDL_BLENDMODE_NONE`. Each quad "reseals" the part of the cone hole that lies behind a wall.
+4. Blit to screen with `SDL_BLENDMODE_BLEND`.
 
-### Task 6 — Skip `audio()` on the win/lost transition
+**Edge cases.**
 
-**Files:**
-- Modify: `src/core/game.cpp`
+- Walls straddling the cone boundary: the silhouette corners may lie on either side of the cone arc. The shadow quad can extend beyond the cone in pixel space; that is fine because the surrounding pixels are already opaque black from the initial clear.
+- Walls behind the apex when only the back cone is active: same logic, smaller scale.
+- Adjacent walls in a row: each contributes its own shadow quad. Quads overlap. With opaque black and `BLENDMODE_NONE`, overlap is idempotent. No artifact.
+- Concave/L-shaped wall blocks: each wall tile is processed independently. Inner corners are handled correctly because the silhouette picks the extreme angles per tile.
 
-Move the existing `audio(reg, device);` call inside the state-branch chain so it only runs when staying in `playing`. The end-screen one-shots play directly in their branches as before.
+**Cost.**
 
-```cpp
-// Play the sounds queued by the systems above and update the music. The
-// win and lose sounds are one-shots tied to the end of the game, so they
-// are played here directly. Skip the audio system on a state transition so
-// its music-management loop doesn't briefly restart background/siren before
-// the end-screen track takes over (would surface as a flash of the wrong
-// music on lose).
-if (state == State::playing) {
-  audio(reg, device);
-} else if (state == State::lost) {
-  device.playSfx(SoundId::death);
-  device.playMusic(SoundId::loseMusic, true);
-} else if (state == State::won) {
-  device.playSfx(SoundId::win);
-  device.playMusic(SoundId::winMusic, true);
-}
-```
+- Cone setup: 2 polygons, 4 vertices each.
+- Shadow quads: typical cone covers 20 to 40 wall tiles in this maze; each contributes 1 quad (4 vertices, 6 indices). 40 quads = 160 vertices, 240 indices.
+- Two `SDL_RenderGeometry` calls (one for cones, one for shadow quads, batched). Cheap.
 
-The queued death-SFX from the lives>0 path still works: on those ticks the state stays `playing`, so `audio()` runs and plays it.
+**Why this is still the runner-up.**
 
-### Task 7 — Update docs
+- Three passes (clear, cone, shadow) on the render target, vs A's two passes (clear, cones).
+- Silhouette logic is correct but easy to get subtly wrong, and bugs show up as light leaking through walls. A's "stop the ray at the first wall" is one well-understood algorithm with one obvious failure mode (too few rays).
+- Sub-tile smoothness for both is identical (apex is interpolated in pixel space either way).
+- C does no occlusion on the cone arc itself, only on cone interior. That is actually fine for this game (the arc is a "light source", not a real surface), but is a conceptual asymmetry.
 
-**Files:**
-- Modify: `README.md` — add a Controls section listing the four keys.
-- Modify: `CLAUDE.md` — document the `State` variants (especially `pausedDebug`), the new bool return of `Game::input`, and the deliberate skip of `audio()` on transition.
+## Step 5 - Select
 
-These don't change behavior, but they prevent the next change from accidentally undoing a deliberate decision.
+**Winner: A (ray-cast visibility polygon).**
 
-### Task 8 — Verification play-through
+Direct comparison vs C:
 
-Build clean and run:
+- Fewer geometry primitives per frame (~64 ray endpoints vs ~40 wall quads on a typical busy frame).
+- Single triangle fan per cone, no boolean stitching. C needs a clear-then-carve-then-uncarve pass.
+- A's worst-case failure mode is "the ray count is too low, edges look polygonal" - cheap to tune.
+- C's worst-case failure mode is "the silhouette picker misclassifies an edge case, light leaks through a corner" - harder to debug.
+- The corner-ray augmentation in A converges to the same crisp-edge result as C in the limit, but starts cleaner without it.
+- A scales naturally if a second flashlight ever appears (a ghost with a light): one more triangle fan, done.
 
-```bash
-cd build && cmake --build . && ./pacman
-```
+C is fine and well-known. A is a better fit for the prompt's "visibility polygon from Pac-Man's position" framing in step 1 of the prompt itself.
 
-Walk through this checklist:
+### Recommended tunable values
 
-- [ ] **Esc quits**: Press Esc during gameplay → window closes.
-- [ ] **Space pause**: Press Space → screen dims, "PAUSED" centered on the maze, audio stops. Press Space again → resumes from the same audio position.
-- [ ] **P debug pause**: Press P → frame freezes (no overlay, no text), audio stops. Press P again → resumes.
-- [ ] **Variants don't cross-toggle**: Pause with Space, then press P → nothing happens. Pause with P, then press Space → nothing happens.
-- [ ] **End screen audio is clean**: Get caught three times. Listen carefully for any flash of background/siren between the death moment and the lose music. There should be none. Repeat for the win screen by eating all dots.
-- [ ] **Win screen parity**: After winning, the screen should show the row of three life icons (any spent ones dimmed) and the final score under the "you win" art, matching the lose screen layout.
-- [ ] **End screens ignore pause keys**: Win or lose, then press Space / P. Nothing happens. Press Esc → quits.
-- [ ] **Player input still works**: WASD / arrows still move Pac-Man while playing; ignored while paused.
+| Tunable | Value | Reason |
+|---------|------:|--------|
+| `flashlightForwardTiles` | 6 | Lights ~6 tiles ahead; reads as a flashlight beam, not a spotlight or a torch. |
+| `flashlightBackTiles` | 2 | Matches the small "stub" in the reference; covers the apex side. |
+| `flashlightForwardHalfDeg` | 22 | Total forward arc 44 deg, narrow beam. Wide enough to see one tile to each side at 6 tiles range (`2 * 6 * 8 * tan(22) ~= 39 px ~= 5 tiles`). |
+| `flashlightBackHalfDeg` | 75 | Total back arc 150 deg. Wide stub plus forward 44 deg covers Pac-Man's 8x8 sprite at the apex with margin. |
+| `flashlightForwardRays` | 48 | At 6-tile cap and 44 deg arc, angular resolution is ~1 deg per ray, far below 1-pixel discrimination. |
+| `flashlightBackRays` | 24 | Same angular density (~6 deg per ray? No - 150/24=6.25 deg per ray; back cone is short so even coarse rays are pixel-clean). |
+| `darknessAlpha` | 255 | Pure black outside the beam (prompt mandate). |
 
-If anything in this checklist fails, fix it before merging. There's no CI.
+Total rays per frame: 72. Generous, well under any performance concern.
 
----
+## Step 6 - Implementation plan
 
-## 4. Self-Review Notes
+### Files
 
-Spec items checked against the plan:
+- `src/comp/flashlight.hpp` - new, empty tag struct.
+- `src/core/constants.hpp` - add 7 tunables.
+- `src/core/factories.cpp` - attach `Flashlight` to the player entity.
+- `src/sys/flashlight_render.hpp` and `flashlight_render.cpp` - new render system. Free functions, first param `entt::registry &`, additional params for the SDL renderer, the cached overlay texture, and the maze.
+- `src/core/game.hpp` - add a cached overlay `SDL::Texture` member (the one allowed piece of non-ECS state).
+- `src/core/game.cpp` - call `flashlightRender(...)` from `Game::render` in the right place; create the overlay texture lazily on first use (or in a small init helper that takes the renderer).
 
-- **Pause text on screen, lose-screen style** (spec 1): Task 4 + Task 5. Procedural "PAUSED" text on top of the existing dim overlay; rationale for keeping the dim and not adding a sprite in §2.3 / §2.4.
-- **Esc exits** (spec 2a): Task 1 (`Game::input` returns bool) + Task 2 (Esc returns false) + Task 3 (Application::run handles it).
-- **Space pauses** (spec 2b): Task 1 (`State::paused` already existed) + Task 2 (Space toggles it).
-- **P debug pauses** (spec 2c): Task 1 (`State::pausedDebug`) + Task 2 (P toggles it) + Task 4 (render branch freezes without overlay/text).
-- **No winner sound on lose** (spec 3): Task 6 (skip `audio()` on transition so the music-management loop doesn't restart background/siren between death and lose-music). Audited `SoundId::win` / `SoundId::winMusic` call sites in §0; they live only in the `won` branch.
-- **Winner screen shows score + spent lives like lose** (spec 4): No code change needed — both branches already call `summaryRender`. Verified during Task 8 play-through.
+The CMake `file(GLOB_RECURSE)` picks up the new files automatically. No `CMakeLists.txt` edit needed.
 
-No placeholders. All file paths and line numbers reference the codebase at the time the plan was written.
+### Step-by-step
+
+1. **Add the tag component.**
+   ```cpp
+   // src/comp/flashlight.hpp
+   #ifndef COMP_FLASHLIGHT_HPP
+   #define COMP_FLASHLIGHT_HPP
+   struct Flashlight {};
+   #endif
+   ```
+   Plain aggregate, empty tag, header-only. Matches the other tag components.
+
+2. **Attach it to the player.** In `core/factories.cpp::makePlayer`, add `reg.emplace<Flashlight>(e);` next to the other component emplacements. No factory signature change.
+
+3. **Add the tunables to `core/constants.hpp`.**
+   ```cpp
+   // Flashlight: forward beam length in tiles.
+   constexpr int flashlightForwardTiles = 6;
+   // Flashlight: back beam length in tiles.
+   constexpr int flashlightBackTiles = 2;
+   // Flashlight: forward cone half-angle in degrees.
+   constexpr int flashlightForwardHalfDeg = 22;
+   // Flashlight: back cone half-angle in degrees.
+   constexpr int flashlightBackHalfDeg = 75;
+   // Flashlight: number of perimeter rays for the forward cone.
+   constexpr int flashlightForwardRays = 48;
+   // Flashlight: number of perimeter rays for the back cone.
+   constexpr int flashlightBackRays = 24;
+   // Alpha of the darkness overlay outside the beam (0..255). 255 = pure black.
+   constexpr std::uint8_t flashlightDarknessAlpha = 255;
+   ```
+   All `constexpr`, all in the existing constants header. Includes already pull `<cstdint>` transitively through `util/dir.hpp` (verify; if not, add `#include <cstdint>`).
+
+4. **Cache the overlay texture on `Game`.** In `core/game.hpp`, add:
+   ```cpp
+   SDL::Texture flashlightOverlay;
+   ```
+   Use the existing `SDL::Texture` RAII wrapper (`util/sdl_delete.hpp`). The destructor frees the GPU resource at shutdown.
+
+5. **Write the flashlight render system.** New files `src/sys/flashlight_render.hpp` and `.cpp`. Signature:
+   ```cpp
+   void flashlightRender(
+     entt::registry &reg,
+     SDL_Renderer *renderer,
+     SDL_Texture *overlay,
+     const MazeState &maze,
+     int frame
+   );
+   ```
+   Body (sketch):
+   - Find the player entity via `reg.view<Flashlight, Position, ActualDir, DesiredDir>()`. There is exactly one. If empty, return.
+   - Compute apex in pixels: `pos.p * tileSize + Pos{tileSize/2, tileSize/2} + toPos(actualDir, frame)`.
+   - Pick facing radians from `DesiredDir`. Map: `right=0, down=pi/2, left=pi, up=3pi/2` (matches the existing 90-deg rotation convention in `playerRender`).
+   - Build forward polygon: for `i = 0..flashlightForwardRays`, ray angle `= facing + lerp(-halfFwd, +halfFwd, i / N)`. Walk DDA on the maze grid, capped at `flashlightForwardTiles * tileSize`. Record endpoint.
+   - Build back polygon: same with `facing + pi` and the back tunables.
+   - Set render target to `overlay`. Clear opaque black. With `SDL_BLENDMODE_NONE`, draw both polygons as transparent (alpha 0) via two `SDL_RenderGeometry` calls.
+   - Restore render target to default (`SDL_SetRenderTarget(renderer, nullptr)`).
+   - `SDL_RenderCopy` the overlay to `{0, 0, tilesPx.x, tilesPx.y}` with the overlay's blend mode set to `SDL_BLENDMODE_BLEND`.
+
+   DDA helper lives in an anonymous namespace inside `flashlight_render.cpp` (per `CLAUDE.md`'s rule on file-local helpers). It takes `(apexX, apexY, dirX, dirY, maxPx, maze)` and returns the endpoint in pixel coordinates. Treat `Tile::wall`, `Tile::door`, and out-of-maze as opaque.
+
+   Vertex arrays: `std::vector<SDL_Vertex>` and `std::vector<int>` as static locals inside the function (`static thread_local` to avoid reallocation per frame). Acceptable per `CLAUDE.md`'s "no new state outside the ECS" rule because they are scratch graphics buffers, not game state, the same way the overlay texture is.
+
+6. **Wire it into `Game::render`.** In `core/game.cpp`:
+   - On the first call (when `flashlightOverlay` is null), create the overlay: `SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, tilesPx.x, tilesPx.y)` and `SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND)`. Wrap in `SDL::Texture`.
+   - Adjust the playing/paused branch:
+     ```cpp
+     fullRender(writer, animera::SpriteID::maze);
+     dotRender(writer, maze);
+     playerRender(reg, writer, renderFrame);
+     ghostRender(reg, writer, renderFrame);
+     flashlightRender(reg, renderer, flashlightOverlay.get(), maze, renderFrame);
+     if (state == State::paused) {
+       pauseOverlayRender(renderer);
+       pauseTextRender(renderer);
+     }
+     hudRender(renderer, writer, reg);
+     ```
+   - The `won` and `lost` branches are untouched, so the end screens are unaffected.
+
+7. **Validate sprite coverage at the apex.** Build Debug, run, walk in all four directions, confirm Pac-Man is fully visible. If a sliver of his sprite slips into the dark on one cardinal, add a tiny opaque-transparent disc at the apex as an additional `SDL_RenderGeometry` polygon (12-vertex regular polygon, radius 6 px). Keep this as a single conditional code block, not a tunable, unless multiple values need testing.
+
+8. **Verify under `-Wall -Wextra -Wpedantic`.** Run:
+   ```
+   cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && cmake --build .
+   ```
+   Fix any sign-compare or unused-parameter warnings. The DDA loop and trig math are the likely sources.
+
+9. **Capture screenshots.** Run Release, walk to a spot where each cardinal direction has a visible wall casting a shadow. Capture four PNGs (one per direction). Stash them in a place the PR can reference.
+
+10. **PR description.** Include:
+    - SDL2 polygon-fill call used: `SDL_RenderGeometry`.
+    - SDL2 minimum version: 2.0.18 (released 2022-01).
+    - Tunable values chosen (the table from Step 5).
+    - One-paragraph description of the cone polygon construction (apex + uniform ray endpoints, DDA wall stop, treat door as wall, no tunnel wrap).
+    - Note that ghost AI and collision are untouched.
+
+### Risk register
+
+- **`SDL_RenderGeometry` not present**: would mean SDL2 < 2.0.18. Mitigation: detect at build time via `SDL_VERSION_ATLEAST(2, 0, 18)`; if absent, fall back to per-scanline `SDL_RenderFillRect`s of the polygon rows. Document the minimum version in the PR description so packagers know.
+- **Render-target lost on window resize / device reset**: the game uses `SDL_RenderSetLogicalSize`, so the logical target dimensions are stable. The window does not resize at runtime. No recreation logic needed in the base case.
+- **Trig precision at tile boundaries**: DDA is integer-stepped with floating-point distances; the endpoint can be 0.5-px past the wall. Visually invisible at logical resolution 8x. If it leaks at integer-scaled large windows, clamp the endpoint to the wall plane exactly.
+- **Pause + flashlight interaction**: relies on `Game::render` already feeding `frozenFrame` while paused. Confirmed in the current code. No extra work.
+
+### Out of scope (mirror the prompt)
+
+Battery, color, soft edges, energizer modes, 360-deg halo, gameplay changes. The plan touches rendering only.

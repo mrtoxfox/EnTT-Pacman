@@ -18,7 +18,9 @@
 #include "sys/render.hpp"
 #include "sys/eat_dots.hpp"
 #include "sys/movement.hpp"
+#include "util/sdl_check.hpp"
 #include "core/factories.hpp"
+#include "sys/flashlight_render.hpp"
 #include "sys/set_target.hpp"
 #include "comp/sound_event.hpp"
 #include "sys/player_input.hpp"
@@ -181,10 +183,23 @@ void Game::render(SDL_Renderer *renderer, SDL::QuadWriter &writer, const int fra
       frozenFrame = frame;
     }
     const int renderFrame = (state == State::playing) ? frame : frozenFrame;
+
+    if (!flashlightOverlay) {
+      SDL_Texture *const tex = SDL_CHECK(SDL_CreateTexture(
+        renderer,
+        SDL_PIXELFORMAT_RGBA8888,
+        SDL_TEXTUREACCESS_TARGET,
+        tilesPx.x, tilesPx.y
+      ));
+      SDL_CHECK(SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND));
+      flashlightOverlay.reset(tex);
+    }
+
     fullRender(writer, animera::SpriteID::maze);
     dotRender(writer, maze);
     playerRender(reg, writer, renderFrame);
     ghostRender(reg, writer, renderFrame);
+    flashlightRender(reg, renderer, flashlightOverlay.get(), maze, renderFrame);
     if (state == State::paused) {
       pauseOverlayRender(renderer);
       pauseTextRender(renderer);

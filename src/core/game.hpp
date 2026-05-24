@@ -13,6 +13,7 @@
 #include "maze.hpp"
 #include <SDL_render.h>
 #include <SDL_scancode.h>
+#include "util/sdl_delete.hpp"
 #include "util/sdl_quad_writer.hpp"
 #include <entt/entity/registry.hpp>
 
@@ -46,6 +47,10 @@ private:
   // the freeze keeps the exact pixel position the player saw at press time
   // (snapping to 0 would jump the sprite back to the tile boundary).
   int frozenFrame = 0;
+  // Cached render-target texture for the flashlight overlay. Created lazily on
+  // first render (needs an SDL_Renderer*). The only piece of non-ECS state
+  // added for the flashlight; it's a GPU resource, not gameplay state.
+  SDL::Texture flashlightOverlay;
 };
 
 #endif

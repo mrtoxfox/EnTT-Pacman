@@ -83,6 +83,47 @@ constexpr int pauseOverlayAlpha = 160;
 // Alpha used by SDL_SetTextureAlphaMod while the player has ImmortalMode
 constexpr int immortalAlpha = 110;
 
+// Flashlight: forward beam length in tiles.
+constexpr int flashlightForwardTiles = 6;
+// Flashlight: back beam length in tiles.
+constexpr int flashlightBackTiles = 1;
+// Flashlight: forward cone half-angle in degrees. Wide enough that the lit
+// area opens out to roughly the full corridor; walls clip the cone to the
+// corridor width where they are present.
+constexpr int flashlightForwardHalfDeg = 32;
+// Flashlight: back cone half-angle in degrees. Slightly wider for a small
+// stub behind the player.
+constexpr int flashlightBackHalfDeg = 35;
+// Flashlight: perimeter ray count for the forward cone.
+constexpr int flashlightForwardRays = 64;
+// Flashlight: perimeter ray count for the back cone.
+constexpr int flashlightBackRays = 32;
+// Flashlight: radius (pixels) of the always-lit halo around the player.
+// Guarantees Pac-Man's sprite is fully covered even when the cones leave a
+// perpendicular gap.
+constexpr int flashlightHaloRadiusPx = 6;
+// Flashlight: perimeter ray count for the halo disc.
+constexpr int flashlightHaloRays = 20;
+// Pixels each ray that hit a wall is extended past the hit point so the
+// wall's inner surface (the side facing the light source) is included in the
+// lit polygon. Larger values show more wall material but can leak past corners.
+constexpr int flashlightWallEdgePx = 3;
+// Color of the unlit overlay. Near-black; the small alpha cut lets the maze
+// stay faintly visible outside the beam.
+constexpr std::uint8_t flashlightDarknessR = 0;
+constexpr std::uint8_t flashlightDarknessG = 0;
+constexpr std::uint8_t flashlightDarknessB = 0;
+// Alpha (0-255) of the unlit overlay. 235 = mostly opaque, with ~8% of the
+// underlying maze bleeding through as a dim outline.
+constexpr std::uint8_t flashlightDarknessAlpha = 235;
+// Light-yellow tint applied additively over the cone area after the darkness
+// overlay, so the beam reads as warm light instead of just an absence of dark.
+// Values are added to the underlying maze RGB - keep moderate so colors do
+// not clip to white.
+constexpr std::uint8_t flashlightBeamR = 90;
+constexpr std::uint8_t flashlightBeamG = 75;
+constexpr std::uint8_t flashlightBeamB = 20;
+
 // Settings passed to Mix_OpenAudio when the audio device is opened
 constexpr int audioFrequency = 44100;
 constexpr int audioOutputChannels = 2;
