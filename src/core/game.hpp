@@ -37,6 +37,7 @@ private:
 
   entt::registry reg;
   MazeState maze;
+  Grid<std::uint8_t> fog;
   int dots = 0;
   std::mt19937 rand;
   State state = State::playing;

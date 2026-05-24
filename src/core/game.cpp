@@ -20,6 +20,7 @@
 #include "sys/movement.hpp"
 #include "core/factories.hpp"
 #include "sys/set_target.hpp"
+#include "sys/reveal_fog.hpp"
 #include "comp/sound_event.hpp"
 #include "sys/player_input.hpp"
 #include "comp/immortal_mode.hpp"
@@ -31,6 +32,7 @@
 
 void Game::init(Audio &device) {
   maze = makeMazeState();
+  fog = Grid<std::uint8_t>{tiles * fogSubdiv};
   const entt::entity player = makePlayer(reg);
   const entt::entity blinky = makeBlinky(reg, player);
   makePinky(reg, player);
@@ -38,6 +40,9 @@ void Game::init(Audio &device) {
   makeClyde(reg, player);
   // seeding a pseudo random number generator with a random source
   rand.seed(std::random_device{}());
+  // Reveal the spawn area before frame 1 so the player isn't drawn on a
+  // fully-black screen.
+  revealFog(reg, fog);
   // The intro jingle plays once; the audio system starts the looping
   // background music after it finishes
   device.playMusic(SoundId::intro, false);
@@ -108,6 +113,7 @@ bool Game::logic(Audio &device) {
 
   movement(reg);
   wallCollide(reg, maze);
+  revealFog(reg, fog);
   dots += eatDots(reg, maze);
   if (eatEnergizer(reg, maze)) {
     ghostScared(reg);
@@ -184,7 +190,8 @@ void Game::render(SDL_Renderer *renderer, SDL::QuadWriter &writer, const int fra
     fullRender(writer, animera::SpriteID::maze);
     dotRender(writer, maze);
     playerRender(reg, writer, renderFrame);
-    ghostRender(reg, writer, renderFrame);
+    ghostRender(reg, writer, fog, renderFrame);
+    fogRender(renderer, fog);
     if (state == State::paused) {
       pauseOverlayRender(renderer);
       pauseTextRender(renderer);

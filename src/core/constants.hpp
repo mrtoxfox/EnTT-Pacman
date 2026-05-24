@@ -88,4 +88,15 @@ constexpr int audioFrequency = 44100;
 constexpr int audioOutputChannels = 2;
 constexpr int audioChunkSize = 2048;
 
+// Chebyshev radius (in tiles) around the player that reveals from fog of war.
+constexpr int fogRevealRadius = 2;
+// Each maze tile is split into fogSubdiv x fogSubdiv fog cells. >1 makes the
+// reveal edge finer (smoother) than the maze tile grid.
+constexpr int fogSubdiv = 2;
+// Pixel size of one fog cell. With tileSize=8 and fogSubdiv=2 this is 4.
+constexpr int fogCellSize = tileSize / fogSubdiv;
+// Tile-row y of the tunnel wrap-around. The literal already appears in
+// sys/movement.cpp and sys/can_move.cpp; reveal_fog wraps on the same row.
+constexpr int tunnelRow = 10;
+
 #endif

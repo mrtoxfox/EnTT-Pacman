@@ -116,13 +116,6 @@ the SDL2 DLLs aren't already on your `PATH`, copy `SDL2.dll` and
 `pacman.exe` before running it. The build copies the `audio` folder next to the
 executable automatically, so the game finds its sounds wherever it's launched.
 
-## Controls
-
-- WASD or arrow keys: move Pac-Man
-- SPACE: pause (dim overlay, "PAUSED" text, audio paused)
-- P: debug pause (freezes the frame without any overlay, audio paused) - useful for inspecting a single tick
-- ESC: quit
-
 ## It's not exactly the same as the real thing
 
 I read [The Pacman Dossier](http://tralvex.com/download/forum/The%20Pac-Man%20Dossier.pdf)

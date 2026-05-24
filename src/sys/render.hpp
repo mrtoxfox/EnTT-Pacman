@@ -9,6 +9,7 @@
 #ifndef SYS_RENDER_HPP
 #define SYS_RENDER_HPP
 
+#include <cstdint>
 #include "core/maze.hpp"
 #include <SDL_render.h>
 #include "util/sprites.hpp"
@@ -18,11 +19,15 @@
 // Render the player (the yellow guy)
 void playerRender(entt::registry &, SDL::QuadWriter &, int);
 
-// Render the ghosts
-void ghostRender(entt::registry &, SDL::QuadWriter &, int);
+// Render the ghosts. Ghosts on unrevealed tiles are skipped.
+void ghostRender(entt::registry &, SDL::QuadWriter &, const Grid<std::uint8_t> &fog, int);
 
 // Render the dots and energizers
 void dotRender(SDL::QuadWriter &, const MazeState &);
+
+// Fill every unrevealed fog cell with an opaque black fogCellSize x fogCellSize
+// rect. Call after the world and ghosts, before the pause overlay.
+void fogRender(SDL_Renderer *, const Grid<std::uint8_t> &fog);
 
 // Render a sprite that covers the whole screen (maze, win, lose)
 void fullRender(SDL::QuadWriter &, animera::SpriteID);

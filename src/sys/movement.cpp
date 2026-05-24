@@ -11,6 +11,7 @@
 #include "comp/dir.hpp"
 #include "sys/can_move.hpp"
 #include "comp/position.hpp"
+#include "core/constants.hpp"
 #include "util/dir_to_pos.hpp"
 #include <entt/entity/registry.hpp>
 
@@ -25,7 +26,7 @@ void movement(entt::registry &reg) {
     // This assumes the exact position of the tunnel.
     // It's good enough for this simple game but a more robust solution might
     // involve making the tunnel into an entity
-    if (pos.y == 10) {
+    if (pos.y == tunnelRow) {
       if (pos.x <= -1 && dir == Dir::left) {
         pos.x = 19;
       } else if (pos.x >= 19 && dir == Dir::right) {

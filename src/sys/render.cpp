@@ -8,6 +8,7 @@
 
 #include "render.hpp"
 
+#include <vector>
 #include <cstdint>
 #include "comp/dir.hpp"
 #include "comp/score.hpp"
@@ -41,10 +42,27 @@ void playerRender(entt::registry &reg, SDL::QuadWriter &writer, const int frame)
   }
 }
 
-void ghostRender(entt::registry &reg, SDL::QuadWriter &writer, const int frame) {
+void ghostRender(entt::registry &reg, SDL::QuadWriter &writer, const Grid<std::uint8_t> &fog, const int frame) {
   const auto view = reg.view<Position, ActualDir, GhostSprite>();
   for (const entt::entity e : view) {
-    const Pos pos = view.get<Position>(e).p * tileSize;
+    const Pos tilePos = view.get<Position>(e).p;
+    // Off-grid tile positions occur for one tick on the tunnel row during wrap
+    // (x = -1 or tiles.x). Draw those ghosts: the player's reveal on tunnelRow
+    // already covers both mouths.
+    // Fog is at fogSubdiv x fogSubdiv resolution per tile, so check the cells
+    // the ghost actually occupies. Visible if any one of them is revealed.
+    const Pos cell0 = tilePos * fogSubdiv;
+    bool anyRevealed = false;
+    for (int cy = 0; cy != fogSubdiv && !anyRevealed; ++cy) {
+      for (int cx = 0; cx != fogSubdiv && !anyRevealed; ++cx) {
+        const Pos c{cell0.x + cx, cell0.y + cy};
+        if (fog.outOfRange(c) || fog[c]) {
+          anyRevealed = true;
+        }
+      }
+    }
+    if (!anyRevealed) continue;
+    const Pos pos = tilePos * tileSize;
     const Dir actualDir = view.get<ActualDir>(e).d;
     writer.tilePos(pos + toPos(actualDir, frame), Pos{tileSize, tileSize});
     const int dirOffset = (
@@ -87,6 +105,22 @@ void fullRender(SDL::QuadWriter &writer, const animera::SpriteID sprite) {
   writer.tilePos({0, 0}, tilesPx);
   writer.tileTex(sprite);
   writer.render();
+}
+
+void fogRender(SDL_Renderer *renderer, const Grid<std::uint8_t> &fog) {
+  std::vector<SDL_Rect> rects;
+  rects.reserve(fog.width() * fog.height());
+  for (int y = 0; y != fog.height(); ++y) {
+    for (int x = 0; x != fog.width(); ++x) {
+      if (!fog[{x, y}]) {
+        rects.push_back({x * fogCellSize, y * fogCellSize, fogCellSize, fogCellSize});
+      }
+    }
+  }
+  if (rects.empty()) return;
+  SDL_CHECK(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
+  SDL_CHECK(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255));
+  SDL_CHECK(SDL_RenderFillRects(renderer, rects.data(), static_cast<int>(rects.size())));
 }
 
 void pauseOverlayRender(SDL_Renderer *renderer) {
