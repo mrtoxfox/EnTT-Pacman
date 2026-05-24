@@ -108,8 +108,11 @@ void fullRender(SDL::QuadWriter &writer, const animera::SpriteID sprite) {
 }
 
 void fogRender(SDL_Renderer *renderer, const Grid<std::uint8_t> &fog) {
-  std::vector<SDL_Rect> rects;
-  rects.reserve(fog.width() * fog.height());
+  // Function-local static keeps the heap buffer alive across frames so we only
+  // pay the allocation once (worst case ~1672 rects for a 38x44 fog grid).
+  // SDL rendering happens on the main thread, so the static is safe.
+  static std::vector<SDL_Rect> rects;
+  rects.clear();
   for (int y = 0; y != fog.height(); ++y) {
     for (int x = 0; x != fog.width(); ++x) {
       if (!fog[{x, y}]) {

@@ -187,6 +187,12 @@ void Game::render(SDL_Renderer *renderer, SDL::QuadWriter &writer, const int fra
       frozenFrame = frame;
     }
     const int renderFrame = (state == State::playing) ? frame : frozenFrame;
+    // Fog renders for all three states. During pause and pausedDebug the logic
+    // loop is frozen, so revealFog hasn't run since the last playing tick and
+    // the fog grid is unchanged - the rendered frame matches what the player
+    // saw at press time. Player is drawn before fog: safe because revealAround
+    // always marks the player's own fogSubdiv x fogSubdiv block, so the fog
+    // quads never paint over the player sprite.
     fullRender(writer, animera::SpriteID::maze);
     dotRender(writer, maze);
     playerRender(reg, writer, renderFrame);

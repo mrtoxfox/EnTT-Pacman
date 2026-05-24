@@ -99,6 +99,23 @@ Direct comparison:
 
 ## 6. Implementation plan
 
+### Deviations from the plan as written
+
+Two changes were made during implementation. The code snippets below reflect
+the original plan; the actual code differs as follows:
+
+1. **Storage is `Grid<std::uint8_t>`, not `Grid<bool>`.** `Grid::operator[]`
+   returns `const Elem &`, and `std::vector<bool>` returns a proxy reference
+   that can't bind to that. A write like `fog[pos] = true` would silently target
+   a temporary. `std::uint8_t` (0 = unrevealed, 1 = revealed) avoids the trap at
+   one byte per cell. Total state cost is still small (1672 bytes at fogSubdiv=2).
+2. **Fog resolution is `fogSubdiv x fogSubdiv` cells per tile, not one cell per
+   tile.** A new `constexpr int fogSubdiv = 2;` (in `constants.hpp`) splits each
+   8 px tile into a 2x2 grid of 4 px fog cells. Reveal and render both operate
+   in cell space. The on-screen reach of `revealAround` is identical to the
+   tile-resolution version; only the edge granularity changes (4 px instead of
+   8 px steps). Ghost visibility checks every cell the ghost occupies.
+
 ### Task 1: constants
 
 In `src/core/constants.hpp`:

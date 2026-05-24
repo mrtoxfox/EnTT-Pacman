@@ -116,6 +116,21 @@ the SDL2 DLLs aren't already on your `PATH`, copy `SDL2.dll` and
 `pacman.exe` before running it. The build copies the `audio` folder next to the
 executable automatically, so the game finds its sounds wherever it's launched.
 
+## Controls
+
+- WASD or arrow keys: move Pac-Man
+- SPACE: pause (dim overlay, "PAUSED" text, audio paused)
+- P: debug pause (freezes the frame without any overlay, audio paused) - useful for inspecting a single tick
+- ESC: quit
+
+## Fog of war
+
+The maze starts hidden. Tiles within two tiles of Pac-Man reveal as he moves,
+and stay revealed for the rest of the game. Ghosts standing on still-unrevealed
+tiles are not drawn, so you only see them once they wander near a tile you've
+already explored. Dots and energizers behind the fog are hidden too, but the
+win condition counts what's been eaten, not what's visible.
+
 ## It's not exactly the same as the real thing
 
 I read [The Pacman Dossier](http://tralvex.com/download/forum/The%20Pac-Man%20Dossier.pdf)
